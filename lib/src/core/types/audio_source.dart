@@ -5,7 +5,9 @@ import 'audio_format.dart';
 import '../errors/svf_exception.dart';
 
 // Conditional file reader for IO vs Web platforms
-import 'audio_source_io.dart' if (dart.library.js_interop) 'audio_source_web.dart' as platform_impl;
+import 'audio_source_io.dart'
+    if (dart.library.js_interop) 'audio_source_web.dart'
+    as platform_impl;
 
 /// Universal cross-platform audio container supporting files (native),
 /// byte arrays (memory / web blobs), and streaming buffers.
@@ -115,7 +117,9 @@ class SvfAudioSource {
       }
       return builder.takeBytes();
     }
-    throw const SvfAudioException('Empty audio source: no bytes, path, or stream available');
+    throw const SvfAudioException(
+      'Empty audio source: no bytes, path, or stream available',
+    );
   }
 
   /// Converts the audio bytes into a Base64-encoded string.
@@ -144,6 +148,8 @@ class SvfAudioSource {
     if (p != null) {
       return platform_impl.openFileStream(p);
     }
-    return Stream.error(const SvfAudioException('No data available in audio source'));
+    return Stream.error(
+      const SvfAudioException('No data available in audio source'),
+    );
   }
 }

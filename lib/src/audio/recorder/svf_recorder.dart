@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
 import '../../core/errors/svf_exception.dart';
 import '../../core/types/audio_format.dart';
@@ -18,11 +19,12 @@ class SvfRecorder implements ISvfAudioRecorder {
   final StreamController<SvfAmplitude> _amplitudeController =
       StreamController<SvfAmplitude>.broadcast();
 
-  StreamSubscription? _amplitudeSub;
+  StreamSubscription<Amplitude>? _amplitudeSub;
   SvfRecorderState _state = SvfRecorderState.idle;
   SvfAudioFormat _currentFormat = SvfAudioFormat.m4a;
 
-  SvfRecorder({AudioRecorder? recorder}) : _recorder = recorder ?? AudioRecorder();
+  SvfRecorder({AudioRecorder? recorder})
+    : _recorder = recorder ?? AudioRecorder();
 
   @override
   Stream<SvfRecorderState> get stateStream => _stateController.stream;
@@ -38,7 +40,10 @@ class SvfRecorder implements ISvfAudioRecorder {
     try {
       return await _recorder.hasPermission();
     } catch (e) {
-      throw SvfAudioException('Failed to query microphone permissions', cause: e);
+      throw SvfAudioException(
+        'Failed to query microphone permissions',
+        cause: e,
+      );
     }
   }
 
@@ -51,7 +56,9 @@ class SvfRecorder implements ISvfAudioRecorder {
   }) async {
     final granted = await hasPermission();
     if (!granted) {
-      throw const SvfAudioException('Microphone permission was denied by the user');
+      throw const SvfAudioException(
+        'Microphone permission was denied by the user',
+      );
     }
 
     _currentFormat = format;
@@ -76,19 +83,18 @@ class SvfRecorder implements ISvfAudioRecorder {
 
       // Start listening to amplitude stream (every 60ms for smooth 60fps waveform UI)
       _amplitudeSub?.cancel();
-      _amplitudeSub = _recorder.onAmplitudeChanged(const Duration(milliseconds: 60)).listen(
-        (amp) {
-          _amplitudeController.add(
-            SvfAmplitude(
-              current: amp.current,
-              max: amp.max,
-            ),
+      _amplitudeSub = _recorder
+          .onAmplitudeChanged(const Duration(milliseconds: 60))
+          .listen(
+            (amp) {
+              _amplitudeController.add(
+                SvfAmplitude(current: amp.current, max: amp.max),
+              );
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _amplitudeController.add(SvfAmplitude.silence);
+            },
           );
-        },
-        onError: (e) {
-          _amplitudeController.add(SvfAmplitude.silence);
-        },
-      );
     } catch (e) {
       _updateState(SvfRecorderState.idle);
       throw SvfAudioException('Failed to start audio recording: $e', cause: e);
@@ -131,18 +137,28 @@ class SvfRecorder implements ISvfAudioRecorder {
       _updateState(SvfRecorderState.stopped);
 
       if (pathResult == null || pathResult.isEmpty) {
-        throw const SvfAudioException('Recorder stopped but produced no output path or data');
+        throw const SvfAudioException(
+          'Recorder stopped but produced no output path or data',
+        );
       }
 
       _updateState(SvfRecorderState.idle);
 
-      // Handle Web blob URL vs Native file path
       if (kIsWeb) {
-        // On web, pathResult is a blob: URL or object URL
-        return SvfAudioSource.fromFile(pathResult, format: _currentFormat);
-      } else {
-        return SvfAudioSource.fromFile(pathResult, format: _currentFormat);
+        final response = await http.get(Uri.parse(pathResult));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw SvfAudioException(
+            'Failed to read browser recording blob (${response.statusCode})',
+          );
+        }
+        return SvfAudioSource.fromBytes(
+          response.bodyBytes,
+          name: 'recording.${_currentFormat.extension}',
+          format: _currentFormat,
+        );
       }
+
+      return SvfAudioSource.fromFile(pathResult, format: _currentFormat);
     } catch (e) {
       _updateState(SvfRecorderState.idle);
       throw SvfAudioException('Failed to stop recording: $e', cause: e);

@@ -4,7 +4,9 @@ import 'package:path_provider/path_provider.dart';
 import 'manifest.dart';
 
 // Platform conditional imports for file operations
-import 'cache_io.dart' if (dart.library.js_interop) 'cache_web.dart' as platform_cache;
+import 'cache_io.dart'
+    if (dart.library.js_interop) 'cache_web.dart'
+    as platform_cache;
 
 /// Manages local disk caching and verification of downloaded model files.
 class ModelCache {
@@ -33,27 +35,33 @@ class ModelCache {
 
   /// Checks if a model file is already downloaded and cached locally.
   Future<bool> isModelCached(ModelManifest manifest) async {
-    if (kIsWeb) return false;
     final path = await getModelFilePath(manifest);
     return platform_cache.doesFileExist(path);
   }
 
   /// Returns the size in bytes of an in-progress partial `.part` file.
   Future<int> getPartFileSize(String modelId) async {
-    if (kIsWeb) return 0;
     final path = await getPartFilePath(modelId);
     return platform_cache.getFileSize(path);
   }
 
   /// Verifies a downloaded file's SHA-256 checksum against [expectedSha256].
   Future<bool> verifyChecksum(String filePath, String expectedSha256) async {
-    if (kIsWeb) return true;
     return platform_cache.verifySha256(filePath, expectedSha256);
   }
 
   /// Promotes a finished `.part` file to the final destination path.
   Future<void> promotePartFile(String partPath, String finalPath) async {
     await platform_cache.renameFile(partPath, finalPath);
+  }
+
+  /// Reads a completed model artifact for an offline runtime adapter.
+  ///
+  /// On Web this reads the artifact from IndexedDB; on IO platforms it reads
+  /// the verified file from the application documents directory.
+  Future<List<int>> readModelBytes(ModelManifest manifest) async {
+    final path = await getModelFilePath(manifest);
+    return platform_cache.readFileBytes(path);
   }
 
   /// Deletes a cached model or partial download.

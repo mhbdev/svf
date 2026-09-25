@@ -1,7 +1,9 @@
+import '../../core/control/cancellation_token.dart';
 import '../contracts/language_model.dart';
 import '../contracts/message.dart';
 import '../contracts/tool.dart';
 import '../models/generation_result.dart';
+import '../models/generate_request.dart';
 
 /// Generates text and handles tool call suggestions using a specified [model].
 ///
@@ -23,6 +25,8 @@ Future<GenerateTextResult> generateText({
   int? maxTokens,
   double? topP,
   List<String>? stopSequences,
+  Map<String, dynamic> providerOptions = const {},
+  CancellationToken? cancellationToken,
 }) async {
   final effectiveMessages = <ChatMessage>[];
 
@@ -35,15 +39,21 @@ Future<GenerateTextResult> generateText({
   } else if (prompt != null) {
     effectiveMessages.add(ChatMessage.user(prompt));
   } else {
-    throw ArgumentError('Either prompt or messages must be provided to generateText');
+    throw ArgumentError(
+      'Either prompt or messages must be provided to generateText',
+    );
   }
 
-  return model.doGenerate(
-    messages: effectiveMessages,
-    tools: tools,
-    temperature: temperature,
-    maxTokens: maxTokens,
-    topP: topP,
-    stopSequences: stopSequences,
+  return model.generate(
+    GenerateRequest(
+      messages: effectiveMessages,
+      tools: tools ?? const [],
+      temperature: temperature,
+      maxTokens: maxTokens,
+      topP: topP,
+      stopSequences: stopSequences ?? const [],
+      providerOptions: providerOptions,
+      cancellationToken: cancellationToken,
+    ),
   );
 }

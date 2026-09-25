@@ -30,7 +30,9 @@ class OpenAiSpeechModel implements TextToSpeechModel {
     required String text,
     SynthesisOptions? options,
   }) async {
-    final cleanBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final cleanBase = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     final url = Uri.parse('$cleanBase/audio/speech');
 
     final voice = options?.voice ?? 'alloy';
@@ -62,7 +64,8 @@ class OpenAiSpeechModel implements TextToSpeechModel {
 
     return SvfAudioSource.fromBytes(
       response.bodyBytes,
-      name: 'speech_${DateTime.now().millisecondsSinceEpoch}.${format.extension}',
+      name:
+          'speech_${DateTime.now().millisecondsSinceEpoch}.${format.extension}',
       format: format,
     );
   }

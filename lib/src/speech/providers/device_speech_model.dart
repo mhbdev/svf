@@ -14,7 +14,7 @@ class DeviceSpeechModel implements SpeechToTextModel {
   bool _isInitialized = false;
 
   DeviceSpeechModel({stt.SpeechToText? speech})
-      : _speech = speech ?? stt.SpeechToText();
+    : _speech = speech ?? stt.SpeechToText();
 
   @override
   String get modelId => 'device-stt';
@@ -47,7 +47,8 @@ class DeviceSpeechModel implements SpeechToTextModel {
     throw SvfUnsupportedPlatformException(
       feature: 'Batch file transcription with DeviceSpeechModel',
       platform: 'Device ASR',
-      message: 'DeviceSpeechModel recognizes live microphone speech. For recorded audio files, use WhisperCloudModel or OfflineWhisperModel.',
+      message:
+          'DeviceSpeechModel recognizes live microphone speech. For recorded audio files, use WhisperCloudModel or OfflineWhisperModel.',
     );
   }
 
@@ -62,7 +63,10 @@ class DeviceSpeechModel implements SpeechToTextModel {
       final available = await isSupported();
       if (!available) {
         controller.addError(
-          const SvfSpeechException('Device speech recognition is not available or permissions denied', engineId: 'device-stt'),
+          const SvfSpeechException(
+            'Device speech recognition is not available or permissions denied',
+            engineId: 'device-stt',
+          ),
         );
         await controller.close();
         return;
@@ -82,9 +86,7 @@ class DeviceSpeechModel implements SpeechToTextModel {
             controller.close();
           }
         },
-        listenOptions: stt.SpeechListenOptions(
-          localeId: options?.language,
-        ),
+        listenOptions: stt.SpeechListenOptions(localeId: options?.language),
       );
     }();
 

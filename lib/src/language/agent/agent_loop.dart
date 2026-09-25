@@ -1,9 +1,11 @@
 import 'dart:convert';
+import '../../core/control/cancellation_token.dart';
 import '../../core/types/usage.dart';
 import '../contracts/language_model.dart';
 import '../contracts/message.dart';
 import '../contracts/tool.dart';
 import '../models/generation_result.dart';
+import '../models/generate_request.dart';
 
 /// Represents a single turn/step in a multi-step agentic loop.
 class AgentStep {
@@ -21,14 +23,10 @@ class AgentStep {
 /// Record of an executed tool call and its return value.
 class ToolExecutionRecord {
   final ToolCall toolCall;
-  final dynamic output;
+  final Object? output;
   final Object? error;
 
-  const ToolExecutionRecord({
-    required this.toolCall,
-    this.output,
-    this.error,
-  });
+  const ToolExecutionRecord({required this.toolCall, this.output, this.error});
 
   bool get isSuccess => error == null;
 }
@@ -64,17 +62,34 @@ Future<AgentLoopResult> agentLoop({
   required List<ChatMessage> messages,
   required List<SvfTool> tools,
   int maxSteps = 5,
+  Duration toolTimeout = const Duration(seconds: 30),
+  Map<String, dynamic> providerOptions = const {},
+  CancellationToken? cancellationToken,
+  Future<bool> Function(SvfTool tool, ToolCall call)? requestApproval,
   void Function(AgentStep step)? onStepFinish,
 }) async {
+  if (maxSteps < 1) {
+    throw ArgumentError.value(
+      maxSteps,
+      'maxSteps',
+      'Must be greater than zero',
+    );
+  }
+
   final conversation = List<ChatMessage>.from(messages);
   final steps = <AgentStep>[];
   var accumulatedUsage = SvfUsage.zero;
   String finalOutput = '';
 
   for (int stepIndex = 1; stepIndex <= maxSteps; stepIndex++) {
-    final stepResult = await model.doGenerate(
-      messages: conversation,
-      tools: tools,
+    cancellationToken?.throwIfCancelled();
+    final stepResult = await model.generate(
+      GenerateRequest(
+        messages: conversation,
+        tools: tools,
+        providerOptions: providerOptions,
+        cancellationToken: cancellationToken,
+      ),
     );
 
     accumulatedUsage += stepResult.usage;
@@ -84,7 +99,9 @@ Future<AgentLoopResult> agentLoop({
     conversation.add(
       ChatMessage.assistant(
         stepResult.text,
-        toolCalls: stepResult.toolCalls.isNotEmpty ? stepResult.toolCalls : null,
+        toolCalls: stepResult.toolCalls.isNotEmpty
+            ? stepResult.toolCalls
+            : null,
       ),
     );
 
@@ -104,9 +121,9 @@ Future<AgentLoopResult> agentLoop({
     final executions = <ToolExecutionRecord>[];
     for (final call in stepResult.toolCalls) {
       final matchingTool = tools.cast<SvfTool?>().firstWhere(
-            (t) => t?.name == call.name,
-            orElse: () => null,
-          );
+        (t) => t?.name == call.name,
+        orElse: () => null,
+      );
 
       if (matchingTool == null) {
         final err = 'Tool "${call.name}" not found in available tools';
@@ -122,7 +139,46 @@ Future<AgentLoopResult> agentLoop({
       }
 
       try {
-        final toolOutput = await matchingTool.execute(call.arguments);
+        if (matchingTool.requiresApproval) {
+          final approved =
+              await requestApproval?.call(matchingTool, call) ?? false;
+          if (!approved) {
+            const err =
+                'Tool execution was not approved by the host application';
+            executions.add(ToolExecutionRecord(toolCall: call, error: err));
+            conversation.add(
+              ChatMessage.tool(
+                toolCallId: call.id,
+                content: jsonEncode({'error': err}),
+                name: call.name,
+              ),
+            );
+            continue;
+          }
+        }
+
+        final validationErrors = matchingTool.parameters.validate(
+          call.arguments,
+        );
+        if (validationErrors.isNotEmpty) {
+          final err =
+              'Invalid arguments for tool "${call.name}": '
+              '${validationErrors.join('; ')}';
+          executions.add(ToolExecutionRecord(toolCall: call, error: err));
+          conversation.add(
+            ChatMessage.tool(
+              toolCallId: call.id,
+              content: jsonEncode({'error': err}),
+              name: call.name,
+            ),
+          );
+          continue;
+        }
+
+        cancellationToken?.throwIfCancelled();
+        final toolOutput = await Future<Object?>.value(
+          matchingTool.execute(call.arguments),
+        ).timeout(toolTimeout);
         executions.add(ToolExecutionRecord(toolCall: call, output: toolOutput));
 
         final stringOutput = toolOutput is String

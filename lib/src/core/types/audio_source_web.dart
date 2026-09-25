@@ -6,7 +6,8 @@ Future<Uint8List> readFileBytes(String path) async {
   throw SvfUnsupportedPlatformException(
     feature: 'Reading direct file path',
     platform: 'Web',
-    message: 'Direct file system paths are not supported on Flutter Web. Use SvfAudioSource.fromBytes instead.',
+    message:
+        'Direct file system paths are not supported on Flutter Web. Use SvfAudioSource.fromBytes instead.',
   );
 }
 
@@ -16,7 +17,8 @@ Stream<List<int>> openFileStream(String path) {
     SvfUnsupportedPlatformException(
       feature: 'Streaming direct file path',
       platform: 'Web',
-      message: 'Direct file system paths are not supported on Flutter Web. Use SvfAudioSource.fromBytes instead.',
+      message:
+          'Direct file system paths are not supported on Flutter Web. Use SvfAudioSource.fromBytes instead.',
     ),
   );
 }

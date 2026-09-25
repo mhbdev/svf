@@ -8,7 +8,7 @@ class OllamaLanguageModel extends OpenAiLanguageModel {
     super.baseUrl = 'http://localhost:11434/v1',
     super.client,
   }) : super(
-          providerId: 'ollama',
-          isOffline: true, // Runs locally on user's machine/network
-        );
+         providerId: 'ollama',
+         isOffline: true, // Runs locally on user's machine/network
+       );
 }

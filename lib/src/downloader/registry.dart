@@ -9,18 +9,21 @@ class ModelRegistry {
   static const whisperTinyEn = ModelManifest(
     id: 'whisper-tiny-en',
     name: 'Whisper Tiny (English)',
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin',
+    downloadUrl:
+        'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin',
     sizeBytes: 77700000,
     sha256: 'bd577a113a86444523746b845ff18c6d7bd222526135f3971e70a24050a6df7a',
     format: 'bin',
-    description: 'Fastest on-device Whisper model, ideal for low-end mobile CPUs.',
+    description:
+        'Fastest on-device Whisper model, ideal for low-end mobile CPUs.',
   );
 
   /// OpenAI Whisper Base (Multilingual, ~142MB).
   static const whisperBase = ModelManifest(
     id: 'whisper-base',
     name: 'Whisper Base (Multilingual)',
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+    downloadUrl:
+        'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
     sizeBytes: 147964211,
     sha256: '465707469f355b2b33da11b8436500b34e864010544c4dde78b82608c2fb86b0',
     format: 'bin',
@@ -31,29 +34,33 @@ class ModelRegistry {
   static const gemma2bQ4 = ModelManifest(
     id: 'gemma-2b-it-q4',
     name: 'Google Gemma 2B Instruct (4-bit)',
-    downloadUrl: 'https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it.Q4_K_M.gguf',
+    downloadUrl:
+        'https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it.Q4_K_M.gguf',
     sizeBytes: 1500000000,
     format: 'gguf',
-    description: 'Compact 2B parameter LLM optimized for on-device instruction following.',
+    description:
+        'Compact 2B parameter LLM optimized for on-device instruction following.',
   );
 
   /// Qwen 2.5 1.5B (Q4_K_M 4-bit quantized, ~980MB).
   static const qwen1_5bQ4 = ModelManifest(
     id: 'qwen-2.5-1.5b-q4',
     name: 'Qwen 2.5 1.5B Instruct (4-bit)',
-    downloadUrl: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
+    downloadUrl:
+        'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
     sizeBytes: 986000000,
     format: 'gguf',
-    description: 'High-intelligence lightweight model suitable for edge devices.',
+    description:
+        'High-intelligence lightweight model suitable for edge devices.',
   );
 
   /// All built-in model manifests.
   static List<ModelManifest> get allBuiltIn => [
-        whisperTinyEn,
-        whisperBase,
-        gemma2bQ4,
-        qwen1_5bQ4,
-      ];
+    whisperTinyEn,
+    whisperBase,
+    gemma2bQ4,
+    qwen1_5bQ4,
+  ];
 
   /// Registers a custom model manifest for download management.
   static void register(ModelManifest manifest) {

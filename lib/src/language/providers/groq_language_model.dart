@@ -7,8 +7,5 @@ class GroqLanguageModel extends OpenAiLanguageModel {
     required super.apiKey,
     super.baseUrl = 'https://api.groq.com/openai/v1',
     super.client,
-  }) : super(
-          providerId: 'groq',
-          isOffline: false,
-        );
+  }) : super(providerId: 'groq', isOffline: false);
 }

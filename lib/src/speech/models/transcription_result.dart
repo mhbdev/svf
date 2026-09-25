@@ -13,11 +13,11 @@ class TranscriptionWord {
   });
 
   Map<String, dynamic> toMap() => {
-        'word': word,
-        if (start != null) 'startMs': start!.inMilliseconds,
-        if (end != null) 'endMs': end!.inMilliseconds,
-        if (confidence != null) 'confidence': confidence,
-      };
+    'word': word,
+    if (start != null) 'startMs': start!.inMilliseconds,
+    if (end != null) 'endMs': end!.inMilliseconds,
+    if (confidence != null) 'confidence': confidence,
+  };
 }
 
 /// Represents a segment / sentence with timestamps.
@@ -71,5 +71,6 @@ class TranscriptionResult {
   });
 
   @override
-  String toString() => 'TranscriptionResult(text: "$text", lang: $language, confidence: $confidence)';
+  String toString() =>
+      'TranscriptionResult(text: "$text", lang: $language, confidence: $confidence)';
 }

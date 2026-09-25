@@ -55,7 +55,9 @@ class WhisperCloudModel implements SpeechToTextModel {
     required SvfAudioSource audio,
     TranscriptionOptions? options,
   }) async {
-    final cleanBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final cleanBase = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
     final url = Uri.parse('$cleanBase/audio/transcriptions');
 
     final bytes = await audio.readBytes();
@@ -66,7 +68,10 @@ class WhisperCloudModel implements SpeechToTextModel {
     }
 
     final mimeParts = audio.mimeType.split('/');
-    final mediaType = MediaType(mimeParts[0], mimeParts.length > 1 ? mimeParts[1] : 'octet-stream');
+    final mediaType = MediaType(
+      mimeParts[0],
+      mimeParts.length > 1 ? mimeParts[1] : 'octet-stream',
+    );
 
     request.files.add(
       http.MultipartFile.fromBytes(
@@ -107,7 +112,9 @@ class WhisperCloudModel implements SpeechToTextModel {
     final text = data['text'] as String? ?? '';
     final language = data['language'] as String?;
     final durationSec = (data['duration'] as num?)?.toDouble();
-    final duration = durationSec != null ? Duration(milliseconds: (durationSec * 1000).round()) : null;
+    final duration = durationSec != null
+        ? Duration(milliseconds: (durationSec * 1000).round())
+        : null;
 
     final segments = <TranscriptionSegment>[];
     if (data['segments'] is List) {
@@ -120,8 +127,16 @@ class WhisperCloudModel implements SpeechToTextModel {
                 segWords.add(
                   TranscriptionWord(
                     word: w['word'] as String? ?? '',
-                    start: w['start'] != null ? Duration(milliseconds: ((w['start'] as num) * 1000).round()) : null,
-                    end: w['end'] != null ? Duration(milliseconds: ((w['end'] as num) * 1000).round()) : null,
+                    start: w['start'] != null
+                        ? Duration(
+                            milliseconds: ((w['start'] as num) * 1000).round(),
+                          )
+                        : null,
+                    end: w['end'] != null
+                        ? Duration(
+                            milliseconds: ((w['end'] as num) * 1000).round(),
+                          )
+                        : null,
                   ),
                 );
               }
@@ -132,8 +147,12 @@ class WhisperCloudModel implements SpeechToTextModel {
             TranscriptionSegment(
               id: seg['id'] as int? ?? 0,
               text: seg['text'] as String? ?? '',
-              start: Duration(milliseconds: (((seg['start'] as num?) ?? 0) * 1000).round()),
-              end: Duration(milliseconds: (((seg['end'] as num?) ?? 0) * 1000).round()),
+              start: Duration(
+                milliseconds: (((seg['start'] as num?) ?? 0) * 1000).round(),
+              ),
+              end: Duration(
+                milliseconds: (((seg['end'] as num?) ?? 0) * 1000).round(),
+              ),
               words: segWords,
             ),
           );
@@ -173,7 +192,10 @@ class WhisperCloudModel implements SpeechToTextModel {
       }();
     } else {
       controller.addError(
-        const SvfSpeechException('Stream transcription requires audioStream input for WhisperCloudModel', engineId: 'whisper-cloud'),
+        const SvfSpeechException(
+          'Stream transcription requires audioStream input for WhisperCloudModel',
+          engineId: 'whisper-cloud',
+        ),
       );
       controller.close();
     }

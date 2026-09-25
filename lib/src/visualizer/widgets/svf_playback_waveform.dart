@@ -34,8 +34,10 @@ class SvfPlaybackWaveform extends StatelessWidget {
         final actualWidth = width ?? constraints.maxWidth;
 
         return GestureDetector(
-          onTapDown: (details) => _handleSeek(details.localPosition, actualWidth),
-          onHorizontalDragUpdate: (details) => _handleSeek(details.localPosition, actualWidth),
+          onTapDown: (details) =>
+              _handleSeek(details.localPosition, actualWidth),
+          onHorizontalDragUpdate: (details) =>
+              _handleSeek(details.localPosition, actualWidth),
           child: ListenableBuilder(
             listenable: controller,
             builder: (context, _) {

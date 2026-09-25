@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../audio/contracts/audio_recorder.dart';
+import '../../audio/models/amplitude.dart';
 
 /// Reactive controller managing waveform sample history, scrubbing, and seeking.
 class SvfWaveformController extends ChangeNotifier {
   final List<double> _samples = [];
   double _playbackPosition = 0.0;
   int _maxVisibleSamples;
-  StreamSubscription? _recorderSub;
+  StreamSubscription<SvfAmplitude>? _recorderSub;
 
   SvfWaveformController({this._maxVisibleSamples = 80});
 

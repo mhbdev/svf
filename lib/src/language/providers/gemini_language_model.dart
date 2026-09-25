@@ -67,45 +67,50 @@ class GeminiLanguageModel implements LanguageModel {
       );
     }
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final candidates = data['candidates'] as List?;
-    if (candidates == null || candidates.isEmpty) {
-      throw SvfModelException('No generation candidates returned from Gemini', modelId: modelId);
+    final data = _asJsonObject(jsonDecode(response.body));
+    final candidates = _asJsonList(data?['candidates']);
+    if (data == null || candidates == null || candidates.isEmpty) {
+      throw SvfModelException(
+        'No generation candidates returned from Gemini',
+        modelId: modelId,
+      );
     }
 
-    final firstCandidate = candidates.first as Map<String, dynamic>;
-    final content = firstCandidate['content'] as Map<String, dynamic>?;
-    final parts = content?['parts'] as List? ?? [];
+    final firstCandidate = _asJsonObject(candidates.first);
+    final content = _asJsonObject(firstCandidate?['content']);
+    final parts = _asJsonList(content?['parts']) ?? const <Object?>[];
 
     final textBuffer = StringBuffer();
     final toolCalls = <ToolCall>[];
 
     for (final part in parts) {
-      if (part is Map<String, dynamic>) {
-        if (part.containsKey('text')) {
-          textBuffer.write(part['text']);
+      final partObject = _asJsonObject(part);
+      if (partObject != null) {
+        final text = partObject['text'];
+        if (text is String) {
+          textBuffer.write(text);
         }
-        if (part.containsKey('functionCall')) {
-          final fn = part['functionCall'] as Map<String, dynamic>;
+        final fn = _asJsonObject(partObject['functionCall']);
+        if (fn != null) {
           toolCalls.add(
             ToolCall(
               id: 'call_${DateTime.now().millisecondsSinceEpoch}',
               name: fn['name'] as String,
-              arguments: Map<String, dynamic>.from(fn['args'] as Map? ?? {}),
+              arguments: _asJsonObject(fn['args']) ?? const <String, dynamic>{},
             ),
           );
         }
       }
     }
 
-    final usageMetadata = data['usageMetadata'] as Map<String, dynamic>?;
+    final usageMetadata = _asJsonObject(data['usageMetadata']);
     final usage = SvfUsage(
       promptTokens: usageMetadata?['promptTokenCount'] as int? ?? 0,
       completionTokens: usageMetadata?['candidatesTokenCount'] as int? ?? 0,
       totalTokens: usageMetadata?['totalTokenCount'] as int? ?? 0,
     );
 
-    final finishReasonStr = firstCandidate['finishReason'] as String?;
+    final finishReasonStr = firstCandidate?['finishReason'] as String?;
 
     return GenerateTextResult(
       text: textBuffer.toString(),
@@ -164,13 +169,17 @@ class GeminiLanguageModel implements LanguageModel {
         final jsonStr = line.substring(6).trim();
         if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
         try {
-          final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-          final candidates = data['candidates'] as List?;
+          final data = _asJsonObject(jsonDecode(jsonStr));
+          final candidates = _asJsonList(data?['candidates']);
           if (candidates != null && candidates.isNotEmpty) {
-            final parts = candidates[0]['content']?['parts'] as List? ?? [];
+            final candidate = _asJsonObject(candidates.first);
+            final content = _asJsonObject(candidate?['content']);
+            final parts = _asJsonList(content?['parts']) ?? const <Object?>[];
             for (final part in parts) {
-              if (part is Map<String, dynamic> && part.containsKey('text')) {
-                yield part['text'] as String;
+              final partObject = _asJsonObject(part);
+              final text = partObject?['text'];
+              if (text is String) {
+                yield text;
               }
             }
           }
@@ -194,7 +203,9 @@ class GeminiLanguageModel implements LanguageModel {
     for (final msg in messages) {
       if (msg.role == ChatRole.system) {
         systemInstruction = {
-          'parts': [{'text': msg.content}],
+          'parts': [
+            {'text': msg.content},
+          ],
         };
       } else {
         final role = msg.role == ChatRole.assistant ? 'model' : 'user';
@@ -211,10 +222,7 @@ class GeminiLanguageModel implements LanguageModel {
           parts.add({'text': msg.content});
         }
 
-        contents.add({
-          'role': role,
-          'parts': parts,
-        });
+        contents.add({'role': role, 'parts': parts});
       }
     }
 
@@ -222,11 +230,15 @@ class GeminiLanguageModel implements LanguageModel {
     if (temperature != null) generationConfig['temperature'] = temperature;
     if (maxTokens != null) generationConfig['maxOutputTokens'] = maxTokens;
     if (topP != null) generationConfig['topP'] = topP;
-    if (stopSequences != null) generationConfig['stopSequences'] = stopSequences;
+    if (stopSequences != null) {
+      generationConfig['stopSequences'] = stopSequences;
+    }
 
     if (responseSchema != null) {
       generationConfig['responseMimeType'] = 'application/json';
-      generationConfig['responseSchema'] = responseSchema.toJsonSchema(strict: true);
+      generationConfig['responseSchema'] = responseSchema.toJsonSchema(
+        strict: true,
+      );
     }
 
     final body = <String, dynamic>{
@@ -245,10 +257,25 @@ class GeminiLanguageModel implements LanguageModel {
               'parameters': t.parameters.toJsonSchema(strict: true),
             };
           }).toList(),
-        }
+        },
       ];
     }
 
     return body;
+  }
+
+  Map<String, dynamic>? _asJsonObject(Object? value) {
+    if (value is Map<Object?, Object?>) {
+      return <String, dynamic>{
+        for (final entry in value.entries)
+          if (entry.key is String) entry.key as String: entry.value,
+      };
+    }
+    return null;
+  }
+
+  List<Object?>? _asJsonList(Object? value) {
+    if (value is List<Object?>) return value;
+    return null;
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../../core/control/cancellation_token.dart';
 import '../../core/schema/svf_schema.dart';
 import '../contracts/language_model.dart';
 import '../contracts/message.dart';
@@ -18,9 +19,14 @@ StreamObjectResult<T> streamObject<T>({
   List<ChatMessage>? messages,
   String? system,
   double? temperature,
+  Map<String, dynamic> providerOptions = const {},
+  CancellationToken? cancellationToken,
   T Function(Map<String, dynamic> json)? parser,
 }) {
-  final partialController = StreamController<Map<String, dynamic>>.broadcast();
+  // Keep this single-subscription so synchronous/offline providers cannot emit
+  // before the consumer attaches. A broadcast controller would silently drop
+  // those first partial objects.
+  final partialController = StreamController<Map<String, dynamic>>();
   final finalObjectCompleter = Completer<T>();
 
   final jsonSchemaString = schema is SvfObjectSchema
@@ -41,7 +47,10 @@ StreamObjectResult<T> streamObject<T>({
     prompt: prompt,
     messages: messages,
     system: effectiveSystem,
+    responseSchema: schema,
     temperature: temperature ?? 0.1,
+    providerOptions: providerOptions,
+    cancellationToken: cancellationToken,
   );
 
   final buffer = StringBuffer();
@@ -59,27 +68,43 @@ StreamObjectResult<T> streamObject<T>({
         partialController.add(partialMap);
       }
     },
-    onError: (e, st) {
-      if (!finalObjectCompleter.isCompleted) finalObjectCompleter.completeError(e, st);
-      partialController.addError(e, st);
+    onError: (Object error, StackTrace stackTrace) {
+      if (!finalObjectCompleter.isCompleted) {
+        finalObjectCompleter.completeError(error, stackTrace);
+      }
+      partialController.addError(error, stackTrace);
     },
     onDone: () async {
       try {
         final fullText = await textStreamResult.fullText;
-        final completeMap = _extractCompleteJson(fullText) ?? lastEmittedPartial;
+        final completeMap =
+            _extractCompleteJson(fullText) ?? lastEmittedPartial;
 
         final T result;
         if (parser != null) {
           result = parser(completeMap);
-        } else if (completeMap is T) {
+        } else if (T == dynamic || T == Map<String, dynamic>) {
           result = completeMap as T;
         } else {
-          result = completeMap as T;
+          throw StateError(
+            'A parser is required for streamObject<$T>. Use streamJson for dynamic JSON.',
+          );
         }
 
-        if (!finalObjectCompleter.isCompleted) finalObjectCompleter.complete(result);
+        final validationErrors = schema.validate(completeMap);
+        if (validationErrors.isNotEmpty) {
+          throw StateError(
+            'Streamed object failed schema validation: ${validationErrors.join('; ')}',
+          );
+        }
+
+        if (!finalObjectCompleter.isCompleted) {
+          finalObjectCompleter.complete(result);
+        }
       } catch (e, st) {
-        if (!finalObjectCompleter.isCompleted) finalObjectCompleter.completeError(e, st);
+        if (!finalObjectCompleter.isCompleted) {
+          finalObjectCompleter.completeError(e, st);
+        }
       } finally {
         partialController.close();
       }

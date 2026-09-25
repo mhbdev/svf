@@ -6,22 +6,24 @@ import '../contracts/tool.dart';
 import '../models/generation_result.dart';
 
 /// Delegate function for generating text offline.
-typedef OfflineGenerateDelegate = Future<GenerateTextResult> Function({
-  required List<ChatMessage> messages,
-  SvfSchema? responseSchema,
-  List<SvfTool>? tools,
-  double? temperature,
-  int? maxTokens,
-});
+typedef OfflineGenerateDelegate =
+    Future<GenerateTextResult> Function({
+      required List<ChatMessage> messages,
+      SvfSchema? responseSchema,
+      List<SvfTool>? tools,
+      double? temperature,
+      int? maxTokens,
+    });
 
 /// Delegate function for streaming text offline.
-typedef OfflineStreamDelegate = Stream<String> Function({
-  required List<ChatMessage> messages,
-  SvfSchema? responseSchema,
-  List<SvfTool>? tools,
-  double? temperature,
-  int? maxTokens,
-});
+typedef OfflineStreamDelegate =
+    Stream<String> Function({
+      required List<ChatMessage> messages,
+      SvfSchema? responseSchema,
+      List<SvfTool>? tools,
+      double? temperature,
+      int? maxTokens,
+    });
 
 /// Pluggable offline LanguageModel adapter.
 /// Allows embedding any on-device engine (e.g. llm_toolkit, llama_cpp, tflite, flutter_gemma)

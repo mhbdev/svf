@@ -2,7 +2,8 @@ import 'dart:async';
 import '../../core/schema/svf_schema.dart';
 
 /// Callback type for executing a tool.
-typedef ToolExecuteCallback = FutureOr<dynamic> Function(Map<String, dynamic> arguments);
+typedef ToolExecuteCallback =
+    FutureOr<Object?> Function(Map<String, dynamic> arguments);
 
 /// A callable tool/function that an AI language model can invoke during generation.
 class SvfTool {
@@ -18,11 +19,21 @@ class SvfTool {
   /// The execution callback that fulfills the tool call.
   final ToolExecuteCallback execute;
 
+  /// Whether the host application must approve execution before the callback
+  /// is invoked. This is useful for destructive, financial, or privacy-
+  /// sensitive tools.
+  final bool requiresApproval;
+
+  /// Human-readable explanation shown to the approver.
+  final String? approvalReason;
+
   const SvfTool({
     required this.name,
     required this.description,
     required this.parameters,
     required this.execute,
+    this.requiresApproval = false,
+    this.approvalReason,
   });
 
   /// Formats this tool to standard OpenAI/Gemini function specification format.

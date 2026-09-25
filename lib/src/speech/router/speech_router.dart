@@ -19,13 +19,15 @@ class SpeechRouter implements SpeechToTextModel {
   });
 
   @override
-  String get modelId => 'router(${primary.modelId}${fallback != null ? " -> ${fallback!.modelId}" : ""})';
+  String get modelId =>
+      'router(${primary.modelId}${fallback != null ? " -> ${fallback!.modelId}" : ""})';
 
   @override
   String get providerId => 'router';
 
   @override
-  bool get isOffline => primary.isOffline && (fallback == null || fallback!.isOffline);
+  bool get isOffline =>
+      primary.isOffline && (fallback == null || fallback!.isOffline);
 
   @override
   Future<bool> isSupported() async {
@@ -52,7 +54,9 @@ class SpeechRouter implements SpeechToTextModel {
       return fallback!.doTranscribe(audio: audio, options: options);
     }
 
-    throw StateError('Neither primary nor fallback speech model is available or supported');
+    throw StateError(
+      'Neither primary nor fallback speech model is available or supported',
+    );
   }
 
   @override
@@ -60,7 +64,38 @@ class SpeechRouter implements SpeechToTextModel {
     Stream<List<int>>? audioStream,
     TranscriptionOptions? options,
   }) {
-    // If primary stream encounters error, fallback is engaged
-    return primary.doStreamTranscription(audioStream: audioStream, options: options);
+    return _streamWithFallback(audioStream: audioStream, options: options);
+  }
+
+  Stream<TranscriptionChunk> _streamWithFallback({
+    required Stream<List<int>>? audioStream,
+    required TranscriptionOptions? options,
+  }) async* {
+    final primarySupported = await primary.isSupported();
+    if (primarySupported) {
+      try {
+        await for (final chunk in primary.doStreamTranscription(
+          audioStream: audioStream,
+          options: options,
+        )) {
+          yield chunk;
+        }
+        return;
+      } catch (_) {
+        if (!autoFallbackOnFailure || fallback == null) rethrow;
+        // Single-subscription audio streams may already be consumed. Callers
+        // should provide a replayable stream when they require retry fallback.
+      }
+    }
+
+    if (fallback == null || !await fallback!.isSupported()) {
+      throw StateError('No supported streaming speech model is available');
+    }
+    await for (final chunk in fallback!.doStreamTranscription(
+      audioStream: audioStream,
+      options: options,
+    )) {
+      yield chunk;
+    }
   }
 }

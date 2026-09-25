@@ -5,15 +5,17 @@ import '../models/transcription_chunk.dart';
 import '../models/transcription_options.dart';
 import '../models/transcription_result.dart';
 
-typedef OfflineTranscribeDelegate = Future<TranscriptionResult> Function(
-  SvfAudioSource audio,
-  TranscriptionOptions? options,
-);
+typedef OfflineTranscribeDelegate =
+    Future<TranscriptionResult> Function(
+      SvfAudioSource audio,
+      TranscriptionOptions? options,
+    );
 
-typedef OfflineStreamTranscribeDelegate = Stream<TranscriptionChunk> Function(
-  Stream<List<int>>? audioStream,
-  TranscriptionOptions? options,
-);
+typedef OfflineStreamTranscribeDelegate =
+    Stream<TranscriptionChunk> Function(
+      Stream<List<int>>? audioStream,
+      TranscriptionOptions? options,
+    );
 
 /// Pluggable offline SpeechToText adapter allowing integration of on-device Whisper,
 /// sherpa-onnx, or tflite without coupling the core package to native C++ dependencies.

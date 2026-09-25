@@ -16,9 +16,15 @@ enum FinishReason {
     if (val == null) return FinishReason.stop;
     final lower = val.toLowerCase();
     if (lower.contains('stop')) return FinishReason.stop;
-    if (lower.contains('length') || lower.contains('max_token')) return FinishReason.length;
-    if (lower.contains('tool') || lower.contains('function')) return FinishReason.toolCalls;
-    if (lower.contains('filter') || lower.contains('safety')) return FinishReason.contentFilter;
+    if (lower.contains('length') || lower.contains('max_token')) {
+      return FinishReason.length;
+    }
+    if (lower.contains('tool') || lower.contains('function')) {
+      return FinishReason.toolCalls;
+    }
+    if (lower.contains('filter') || lower.contains('safety')) {
+      return FinishReason.contentFilter;
+    }
     return FinishReason.other;
   }
 }
@@ -52,7 +58,8 @@ class GenerateTextResult {
   bool get hasToolCalls => toolCalls.isNotEmpty;
 
   @override
-  String toString() => 'GenerateTextResult(text: $text, toolCalls: ${toolCalls.length}, reason: ${finishReason.value})';
+  String toString() =>
+      'GenerateTextResult(text: $text, toolCalls: ${toolCalls.length}, reason: ${finishReason.value})';
 }
 
 /// Result returned by [generateObject] containing a typed or structured object.
@@ -77,5 +84,6 @@ class GenerateObjectResult<T> {
   });
 
   @override
-  String toString() => 'GenerateObjectResult<$T>(object: $object, warnings: ${warnings.length})';
+  String toString() =>
+      'GenerateObjectResult<$T>(object: $object, warnings: ${warnings.length})';
 }

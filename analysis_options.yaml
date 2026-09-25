@@ -1,4 +1,20 @@
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    missing_return: error
+    invalid_assignment: error
+
+linter:
+  rules:
+    avoid_dynamic_calls: true
+    exhaustive_cases: true
+    prefer_final_locals: true
+    strict_top_level_inference: true
+
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

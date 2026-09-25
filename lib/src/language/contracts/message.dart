@@ -27,13 +27,10 @@ class ToolCall {
   });
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'type': 'function',
-        'function': {
-          'name': name,
-          'arguments': arguments,
-        },
-      };
+    'id': id,
+    'type': 'function',
+    'function': {'name': name, 'arguments': arguments},
+  };
 }
 
 /// Represents a single message in a chat sequence.
@@ -73,21 +70,21 @@ class ChatMessage {
     required String toolCallId,
     required String content,
     String? name,
-  }) =>
-      ChatMessage(
-        role: ChatRole.tool,
-        content: content,
-        toolCallId: toolCallId,
-        name: name,
-      );
+  }) => ChatMessage(
+    role: ChatRole.tool,
+    content: content,
+    toolCallId: toolCallId,
+    name: name,
+  );
 
   Map<String, dynamic> toMap() => {
-        'role': role.value,
-        'content': content,
-        if (name != null) 'name': name,
-        if (toolCalls != null) 'tool_calls': toolCalls!.map((e) => e.toMap()).toList(),
-        if (toolCallId != null) 'tool_call_id': toolCallId,
-      };
+    'role': role.value,
+    'content': content,
+    if (name != null) 'name': name,
+    if (toolCalls != null)
+      'tool_calls': toolCalls!.map((e) => e.toMap()).toList(),
+    if (toolCallId != null) 'tool_call_id': toolCallId,
+  };
 
   @override
   String toString() => 'ChatMessage(role: ${role.value}, content: $content)';

@@ -1,30 +1,42 @@
 import 'dart:async';
 import '../../core/types/usage.dart';
 import '../contracts/message.dart';
+import 'generation_event.dart';
 
 /// Stream result returned by [streamText].
 class StreamTextResult {
   /// Real-time stream of output text delta chunks.
   final Stream<String> textStream;
 
+  /// Full normalized event stream. [textStream] is a convenience projection.
+  final Stream<GenerationEvent>? events;
+
   final Completer<String> _fullTextCompleter = Completer<String>();
   final Completer<SvfUsage> _usageCompleter = Completer<SvfUsage>();
-  final Completer<List<ToolCall>> _toolCallsCompleter = Completer<List<ToolCall>>();
+  final Completer<List<ToolCall>> _toolCallsCompleter =
+      Completer<List<ToolCall>>();
 
   StreamTextResult({
     required this.textStream,
+    this.events,
     Future<String>? fullText,
     Future<SvfUsage>? usage,
     Future<List<ToolCall>>? toolCalls,
   }) {
     if (fullText != null) {
-      fullText.then(_fullTextCompleter.complete).catchError(_fullTextCompleter.completeError);
+      fullText
+          .then(_fullTextCompleter.complete)
+          .catchError(_fullTextCompleter.completeError);
     }
     if (usage != null) {
-      usage.then(_usageCompleter.complete).catchError(_usageCompleter.completeError);
+      usage
+          .then(_usageCompleter.complete)
+          .catchError(_usageCompleter.completeError);
     }
     if (toolCalls != null) {
-      toolCalls.then(_toolCallsCompleter.complete).catchError(_toolCallsCompleter.completeError);
+      toolCalls
+          .then(_toolCallsCompleter.complete)
+          .catchError(_toolCallsCompleter.completeError);
     }
   }
 

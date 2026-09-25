@@ -40,15 +40,14 @@ abstract class SvfSchema {
     int? minLength,
     int? maxLength,
     bool isNullable = false,
-  }) =>
-      SvfStringSchema(
-        description: description,
-        enumeration: enumeration,
-        pattern: pattern,
-        minLength: minLength,
-        maxLength: maxLength,
-        isNullable: isNullable,
-      );
+  }) => SvfStringSchema(
+    description: description,
+    enumeration: enumeration,
+    pattern: pattern,
+    minLength: minLength,
+    maxLength: maxLength,
+    isNullable: isNullable,
+  );
 
   /// Creates a floating-point number schema.
   static SvfNumberSchema number({
@@ -56,13 +55,12 @@ abstract class SvfSchema {
     num? minimum,
     num? maximum,
     bool isNullable = false,
-  }) =>
-      SvfNumberSchema(
-        description: description,
-        minimum: minimum,
-        maximum: maximum,
-        isNullable: isNullable,
-      );
+  }) => SvfNumberSchema(
+    description: description,
+    minimum: minimum,
+    maximum: maximum,
+    isNullable: isNullable,
+  );
 
   /// Creates an integer number schema.
   static SvfIntegerSchema integer({
@@ -70,35 +68,29 @@ abstract class SvfSchema {
     int? minimum,
     int? maximum,
     bool isNullable = false,
-  }) =>
-      SvfIntegerSchema(
-        description: description,
-        minimum: minimum,
-        maximum: maximum,
-        isNullable: isNullable,
-      );
+  }) => SvfIntegerSchema(
+    description: description,
+    minimum: minimum,
+    maximum: maximum,
+    isNullable: isNullable,
+  );
 
   /// Creates a boolean true/false schema.
   static SvfBooleanSchema boolean({
     String? description,
     bool isNullable = false,
-  }) =>
-      SvfBooleanSchema(
-        description: description,
-        isNullable: isNullable,
-      );
+  }) => SvfBooleanSchema(description: description, isNullable: isNullable);
 
   /// Creates an enum string schema with restricted allowed values.
   static SvfStringSchema enumeration(
     List<String> values, {
     String? description,
     bool isNullable = false,
-  }) =>
-      SvfStringSchema(
-        description: description,
-        enumeration: values,
-        isNullable: isNullable,
-      );
+  }) => SvfStringSchema(
+    description: description,
+    enumeration: values,
+    isNullable: isNullable,
+  );
 
   /// Creates an array/list schema with a defined item element schema.
   static SvfArraySchema array({
@@ -107,14 +99,13 @@ abstract class SvfSchema {
     int? minItems,
     int? maxItems,
     bool isNullable = false,
-  }) =>
-      SvfArraySchema(
-        items: items,
-        description: description,
-        minItems: minItems,
-        maxItems: maxItems,
-        isNullable: isNullable,
-      );
+  }) => SvfArraySchema(
+    items: items,
+    description: description,
+    minItems: minItems,
+    maxItems: maxItems,
+    isNullable: isNullable,
+  );
 
   /// Creates a compound key-value object schema.
   static SvfObjectSchema object({
@@ -123,26 +114,26 @@ abstract class SvfSchema {
     String? description,
     bool additionalProperties = false,
     bool isNullable = false,
-  }) =>
-      SvfObjectSchema(
-        properties: properties,
-        required: required,
-        description: description,
-        additionalProperties: additionalProperties,
-        isNullable: isNullable,
-      );
+  }) => SvfObjectSchema(
+    properties: properties,
+    required: required,
+    description: description,
+    additionalProperties: additionalProperties,
+    isNullable: isNullable,
+  );
 
   /// Generates standard JSON Schema representation.
   Map<String, dynamic> toJsonSchema({bool strict = true});
 
-  /// Validates a dynamic value against this schema. Returns list of error messages (empty if valid).
-  List<String> validate(dynamic value);
+  /// Validates an untyped JSON-compatible value against this schema. Returns
+  /// an empty list when the value is valid.
+  List<String> validate(Object? value);
 
   /// Returns true if [value] complies with the schema.
-  bool isValid(dynamic value) => validate(value).isEmpty;
+  bool isValid(Object? value) => validate(value).isEmpty;
 
   /// Asserts validity of [value], throwing [SvfSchemaValidationException] on failure.
-  void assertValid(dynamic value) {
+  void assertValid(Object? value) {
     final errors = validate(value);
     if (errors.isNotEmpty) {
       throw SvfSchemaValidationException(
@@ -184,7 +175,7 @@ class SvfStringSchema extends SvfSchema {
   }
 
   @override
-  List<String> validate(dynamic value) {
+  List<String> validate(Object? value) {
     if (value == null) {
       return isNullable ? [] : ['Value cannot be null'];
     }
@@ -193,13 +184,19 @@ class SvfStringSchema extends SvfSchema {
     }
     final errors = <String>[];
     if (enumeration != null && !enumeration!.contains(value)) {
-      errors.add('Value "$value" not in allowed enum: ${enumeration!.join(', ')}');
+      errors.add(
+        'Value "$value" not in allowed enum: ${enumeration!.join(', ')}',
+      );
     }
     if (minLength != null && value.length < minLength!) {
-      errors.add('String length ${value.length} is less than minLength $minLength');
+      errors.add(
+        'String length ${value.length} is less than minLength $minLength',
+      );
     }
     if (maxLength != null && value.length > maxLength!) {
-      errors.add('String length ${value.length} is greater than maxLength $maxLength');
+      errors.add(
+        'String length ${value.length} is greater than maxLength $maxLength',
+      );
     }
     if (pattern != null && !RegExp(pattern!).hasMatch(value)) {
       errors.add('String does not match pattern "$pattern"');
@@ -232,7 +229,7 @@ class SvfNumberSchema extends SvfSchema {
   }
 
   @override
-  List<String> validate(dynamic value) {
+  List<String> validate(Object? value) {
     if (value == null) {
       return isNullable ? [] : ['Value cannot be null'];
     }
@@ -274,7 +271,7 @@ class SvfIntegerSchema extends SvfSchema {
   }
 
   @override
-  List<String> validate(dynamic value) {
+  List<String> validate(Object? value) {
     if (value == null) {
       return isNullable ? [] : ['Value cannot be null'];
     }
@@ -294,10 +291,8 @@ class SvfIntegerSchema extends SvfSchema {
 
 /// Boolean schema implementation.
 class SvfBooleanSchema extends SvfSchema {
-  const SvfBooleanSchema({
-    super.description,
-    super.isNullable,
-  }) : super(type: SvfSchemaType.boolean);
+  const SvfBooleanSchema({super.description, super.isNullable})
+    : super(type: SvfSchemaType.boolean);
 
   @override
   Map<String, dynamic> toJsonSchema({bool strict = true}) {
@@ -309,7 +304,7 @@ class SvfBooleanSchema extends SvfSchema {
   }
 
   @override
-  List<String> validate(dynamic value) {
+  List<String> validate(Object? value) {
     if (value == null) {
       return isNullable ? [] : ['Value cannot be null'];
     }
@@ -347,7 +342,7 @@ class SvfArraySchema extends SvfSchema {
   }
 
   @override
-  List<String> validate(dynamic value) {
+  List<String> validate(Object? value) {
     if (value == null) {
       return isNullable ? [] : ['Value cannot be null'];
     }
@@ -356,10 +351,14 @@ class SvfArraySchema extends SvfSchema {
     }
     final errors = <String>[];
     if (minItems != null && value.length < minItems!) {
-      errors.add('Array length ${value.length} is less than minItems $minItems');
+      errors.add(
+        'Array length ${value.length} is less than minItems $minItems',
+      );
     }
     if (maxItems != null && value.length > maxItems!) {
-      errors.add('Array length ${value.length} is greater than maxItems $maxItems');
+      errors.add(
+        'Array length ${value.length} is greater than maxItems $maxItems',
+      );
     }
     for (int i = 0; i < value.length; i++) {
       final itemErrors = items.validate(value[i]);
@@ -383,8 +382,8 @@ class SvfObjectSchema extends SvfSchema {
     super.description,
     this.additionalProperties = false,
     super.isNullable,
-  })  : required = required ?? properties.keys.toList(),
-        super(type: SvfSchemaType.object);
+  }) : required = required ?? properties.keys.toList(),
+       super(type: SvfSchemaType.object);
 
   @override
   Map<String, dynamic> toJsonSchema({bool strict = true}) {
@@ -404,7 +403,7 @@ class SvfObjectSchema extends SvfSchema {
   }
 
   @override
-  List<String> validate(dynamic value) {
+  List<String> validate(Object? value) {
     if (value == null) {
       return isNullable ? [] : ['Value cannot be null'];
     }
@@ -417,7 +416,9 @@ class SvfObjectSchema extends SvfSchema {
     for (final req in required) {
       if (!value.containsKey(req) || value[req] == null) {
         final propSchema = properties[req];
-        if (propSchema != null && propSchema.isNullable && value.containsKey(req)) {
+        if (propSchema != null &&
+            propSchema.isNullable &&
+            value.containsKey(req)) {
           // Permitted null
         } else {
           errors.add('Missing required property: "$req"');

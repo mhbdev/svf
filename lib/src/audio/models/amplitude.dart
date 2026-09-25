@@ -8,10 +8,7 @@ class SvfAmplitude {
   /// Peak amplitude in decibels.
   final double max;
 
-  const SvfAmplitude({
-    required this.current,
-    required this.max,
-  });
+  const SvfAmplitude({required this.current, required this.max});
 
   /// Empty / silence amplitude.
   static const silence = SvfAmplitude(current: -160.0, max: -160.0);
@@ -27,5 +24,6 @@ class SvfAmplitude {
   }
 
   @override
-  String toString() => 'SvfAmplitude(current: ${current.toStringAsFixed(1)}dB, norm: ${normalized.toStringAsFixed(2)})';
+  String toString() =>
+      'SvfAmplitude(current: ${current.toStringAsFixed(1)}dB, norm: ${normalized.toStringAsFixed(2)})';
 }

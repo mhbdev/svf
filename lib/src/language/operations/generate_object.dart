@@ -1,9 +1,12 @@
 import 'dart:convert';
+
+import '../../core/control/cancellation_token.dart';
 import '../../core/errors/svf_exception.dart';
 import '../../core/schema/svf_schema.dart';
 import '../contracts/language_model.dart';
 import '../contracts/message.dart';
 import '../models/generation_result.dart';
+import '../models/generate_request.dart';
 
 /// Generates a strictly typed or structured JSON object from a language model,
 /// enforcing compliance against the provided [schema] (inspired by Vercel AI SDK generateObject).
@@ -27,6 +30,8 @@ Future<GenerateObjectResult<T>> generateObject<T>({
   List<ChatMessage>? messages,
   String? system,
   double? temperature,
+  Map<String, dynamic> providerOptions = const {},
+  CancellationToken? cancellationToken,
   T Function(Map<String, dynamic> json)? parser,
 }) async {
   final effectiveMessages = <ChatMessage>[];
@@ -53,21 +58,34 @@ Future<GenerateObjectResult<T>> generateObject<T>({
   } else if (prompt != null) {
     effectiveMessages.add(ChatMessage.user(prompt));
   } else {
-    throw ArgumentError('Either prompt or messages must be provided to generateObject');
+    throw ArgumentError(
+      'Either prompt or messages must be provided to generateObject',
+    );
   }
 
   // Request model generation with responseSchema constraint
-  final rawResult = await model.doGenerate(
-    messages: effectiveMessages,
-    responseSchema: schema,
-    temperature: temperature ?? 0.1, // Low temperature for high structured fidelity
+  final rawResult = await model.generate(
+    GenerateRequest(
+      messages: effectiveMessages,
+      responseSchema: schema,
+      temperature: temperature ?? 0.1,
+      providerOptions: providerOptions,
+      cancellationToken: cancellationToken,
+    ),
   );
 
   // Parse and extract JSON map from response text
   final rawJson = _extractJsonMap(rawResult.text);
 
   // Validate output against schema
-  final validationWarnings = schema.validate(rawJson);
+  final validationErrors = schema.validate(rawJson);
+  if (validationErrors.isNotEmpty) {
+    throw SvfSchemaValidationException(
+      'Generated output did not match the requested schema.',
+      rawOutput: rawJson,
+      validationErrors: validationErrors,
+    );
+  }
 
   // Parse into typed object T
   final T parsedObject;
@@ -81,17 +99,20 @@ Future<GenerateObjectResult<T>> generateObject<T>({
         cause: e,
       );
     }
-  } else if (rawJson is T) {
+  } else if (T == dynamic || T == Map<String, dynamic>) {
     parsedObject = rawJson as T;
   } else {
-    parsedObject = rawJson as T;
+    throw SvfSchemaValidationException(
+      'A parser is required for generateObject<$T>. Use generateJson for a dynamic JSON map.',
+      rawOutput: rawJson,
+    );
   }
 
   return GenerateObjectResult<T>(
     object: parsedObject,
     rawJson: rawJson,
     usage: rawResult.usage,
-    warnings: validationWarnings,
+    warnings: const [],
   );
 }
 
@@ -107,7 +128,10 @@ Map<String, dynamic> _extractJsonMap(String text) {
   }
 
   // 2. Strip ```json ... ``` code blocks
-  final codeBlockRegex = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```', multiLine: true);
+  final codeBlockRegex = RegExp(
+    r'```(?:json)?\s*([\s\S]*?)\s*```',
+    multiLine: true,
+  );
   final match = codeBlockRegex.firstMatch(trimmed);
   if (match != null) {
     final candidate = match.group(1)?.trim();

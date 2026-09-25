@@ -43,14 +43,14 @@ class ModelManifest {
   }
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'name': name,
-        'downloadUrl': downloadUrl,
-        'sizeBytes': sizeBytes,
-        if (sha256 != null) 'sha256': sha256,
-        'format': format,
-        if (description != null) 'description': description,
-      };
+    'id': id,
+    'name': name,
+    'downloadUrl': downloadUrl,
+    'sizeBytes': sizeBytes,
+    if (sha256 != null) 'sha256': sha256,
+    'format': format,
+    if (description != null) 'description': description,
+  };
 
   factory ModelManifest.fromMap(Map<String, dynamic> map) {
     return ModelManifest(

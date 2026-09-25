@@ -1,217 +1,335 @@
 # Smart Voice Foundation (`svf`)
 
-[![pub package](https://img.shields.io/badge/pub-v0.0.1-blue.svg)](https://pub.dev)
-[![license](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-android%20|%20web%20|%20ios%20|%20desktop-teal.svg)](https://flutter.dev)
+`svf` is a Flutter/Dart foundation for voice-driven AI applications. It provides provider-neutral contracts and practical adapters for:
 
-A universal, production-ready, dependency-minimal Smart Voice and AI foundation SDK for Flutter and Dart. Designed with the architectural elegance of **Vercel's AI SDK**, tailored for real-time voice recording, pure Flutter Canvas waveforms, speech recognition, speech synthesis, structured data extraction (`generateObject`), and resumable offline model downloading.
+- microphone recording and amplitude events;
+- batch and live speech recognition;
+- text-to-speech;
+- immediate and streamed LLM generation;
+- validated structured JSON output;
+- tool calling and approval-aware agent loops;
+- OpenAI-compatible providers, including OpenRouter;
+- offline model adapters and resumable model artifacts;
+- Android and Flutter Web applications.
 
----
+The package is designed for applications where a person speaks naturally, an AI system extracts or reasons over the transcript, the application reviews the result, and the person remains in control of the final saved or exported data.
 
-## 🌟 Key Highlights
+## Installation
 
-- **Vercel AI SDK Inspired Architecture**: Universal primitives: `generateText`, `streamText`, `generateObject`, `streamObject`, `transcribeAudio`, `streamTranscription`, and `agentLoop`.
-- **Zero Native Bloat & Day-1 Web Parity**: Runs smoothly on **Android and Web** without native FFI compilation crashes or missing-plugin errors.
-- **Pure Flutter 60fps Canvas Waveforms**: `SvfLiveWaveform` and `SvfPlaybackWaveform` widgets powered by custom `CustomPainter`. Zero native C++/Kotlin dependencies; smooth gesture seeking and scrubbing everywhere.
-- **Provider-Agnostic LLM Protocol**: Seamlessly toggle between Google Gemini, OpenAI (GPT-4o), Groq Cloud (Llama 3.3), Ollama, and on-device models via a shared `LanguageModel` contract.
-- **Type-Safe Structured Output (`generateObject`)**: Build strict declarative schemas (`SvfSchema.object(...)`) to extract validated forms, entities, or JSON data directly from voice transcripts or prompts.
-- **Resilient Resumable Model Downloader**: HTTP `Range` chunked downloader with pause/resume support, network reconnection, progress tracking (speed, ETA), and SHA-256 integrity verification.
-- **Human-in-the-Loop (HITL) by Design**: Review, edit, approve, and export voice-populated forms.
-
----
-
-## 📦 Installation
-
-Add `svf` to your `pubspec.yaml`:
+Add `svf` to the application:
 
 ```yaml
 dependencies:
   svf: ^0.0.1
 ```
 
-Or run:
+Then run:
 
 ```bash
-flutter pub add svf
+flutter pub get
 ```
 
----
+The core abstractions do not depend on Genkit, `llm_toolkit`, a particular LLM vendor, or an offline inference runtime. The package uses small, replaceable adapters around official Flutter/platform integrations such as `record`, `speech_to_text`, `http`, and `path_provider`.
 
-## 🚀 Quickstart
+## Platform setup
 
-### 1. Initialize the SDK
+### Android
+
+Add microphone permission to `android/app/src/main/AndroidManifest.xml`:
+
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+```
+
+Configure any provider API keys through a secure backend or platform-specific secret mechanism. Do not commit keys to source control.
+
+### Web
+
+Run from HTTPS or localhost so the browser can grant microphone access. Browser recording returns a Blob URL; SVF resolves that recording into bytes before exposing it as an `SvfAudioSource`.
+
+Never ship a production OpenAI, OpenRouter, Groq, or Gemini secret in a Flutter Web bundle. Use a server-side proxy for browser applications.
+
+## Quick start
 
 ```dart
 import 'package:svf/svf.dart';
 
 final svf = Svf();
+
+Future<void> recordAndTranscribe() async {
+  await svf.recorder.start(format: SvfAudioFormat.webm);
+  // Connect svf.recorder.amplitudeStream to your waveform UI.
+
+  final audio = await svf.recorder.stop();
+  final result = await transcribeAudio(
+    model: svf.groqWhisper(apiKey: 'YOUR_SERVER_TOKEN'),
+    audio: audio,
+    options: const TranscriptionOptions(language: 'en'),
+  );
+
+  print(result.text);
+  await svf.dispose();
+}
 ```
 
----
+For production Web deployments, replace the direct cloud model with an authenticated application backend.
 
-### 2. Universal Voice Recording with 60fps Live Waveform
+## Generate text
 
 ```dart
-// 1. Controller manages amplitudes and sliding window
-final waveformController = SvfWaveformController();
-waveformController.attachRecorder(svf.recorder);
-
-// 2. Start recording (works on Android & Web)
-await svf.recorder.start();
-
-// 3. Render 60fps Canvas waveform in Flutter UI
-SvfLiveWaveform(
-  controller: waveformController,
-  style: const SvfWaveformStyle(
-    barColor: Colors.cyanAccent,
-    barWidth: 3.5,
-    barSpacing: 3.0,
-    isSymmetric: true,
-  ),
-  height: 90,
+final model = svf.openRouter(
+  'openai/gpt-4o-mini',
+  apiKey: 'YOUR_TOKEN',
+  httpReferer: 'https://your-app.example',
+  appTitle: 'Your application',
 );
 
-// 4. Stop recording and obtain the universal audio source
-final audioSource = await svf.recorder.stop();
-```
-
----
-
-### 3. Speech-to-Text Transcription
-
-```dart
-// Batch transcription via Cloud Whisper (OpenAI / Groq)
-final transcription = await transcribeAudio(
-  model: svf.groqWhisper(apiKey: 'YOUR_GROQ_KEY'),
-  audio: audioSource,
-  options: const TranscriptionOptions(language: 'en'),
+final response = await generateText(
+  model: model,
+  system: 'You are a concise assistant.',
+  prompt: 'Summarize this transcript in three sentences: $transcript',
 );
 
-print('Transcript: ${transcription.text}');
+print(response.text);
 ```
 
----
-
-### 4. Structured Output Extraction (`generateObject`)
-
-Extract typed data from voice transcripts into any schema (forms, records, objects):
+The OpenAI-compatible adapter also supports OpenAI, Groq, Ollama, LM Studio, and compatible gateways:
 
 ```dart
-// Define declarative schema
-final patientSchema = SvfSchema.object(
+final openAi = svf.openai('gpt-4o-mini', apiKey: 'YOUR_TOKEN');
+final groq = svf.groq('llama-3.3-70b-versatile', apiKey: 'YOUR_TOKEN');
+final ollama = svf.ollama('llama3.2');
+```
+
+## Stream text and typed events
+
+```dart
+final result = streamText(
+  model: model,
+  prompt: 'Explain the transcript to a non-technical user.',
+);
+
+await for (final delta in result.textStream) {
+  print(delta);
+}
+
+final fullText = await result.fullText;
+final usage = await result.usage;
+```
+
+For richer integrations, consume the normalized event stream:
+
+```dart
+await for (final event in result.events!) {
+  switch (event) {
+    case GenerationStarted():
+      break;
+    case TextDelta(:final text):
+      print(text);
+    case ToolCallDelta(:final name, :final argumentsDelta):
+      print('Tool $name: $argumentsDelta');
+    case GenerationFinished(:final finishReason):
+      print('Finished: ${finishReason.value}');
+    case GenerationFailed(:final error):
+      print('Failed: $error');
+  }
+}
+```
+
+## Structured output
+
+Use `generateJson` when a dynamic JSON map is exactly what your application needs:
+
+```dart
+final schema = SvfSchema.object(
   properties: {
-    'patient_name': SvfSchema.string(description: 'Full name'),
-    'age': SvfSchema.integer(description: 'Age in years'),
-    'primary_complaint': SvfSchema.enumeration(['Fever', 'Headache', 'Cough']),
-    'is_urgent': SvfSchema.boolean(),
+    'summary': SvfSchema.string(),
+    'priority': SvfSchema.enumeration(['low', 'medium', 'high']),
+    'needs_follow_up': SvfSchema.boolean(),
   },
-  required: ['patient_name', 'primary_complaint'],
+  required: ['summary', 'priority', 'needs_follow_up'],
 );
 
-// Extract structured object using Gemini, OpenAI, or local model
-final result = await generateObject(
-  model: svf.gemini('gemini-1.5-flash', apiKey: 'YOUR_GEMINI_KEY'),
-  schema: patientSchema,
-  prompt: 'Patient Alice, age 32, reports high fever since yesterday. Urgent.',
+final json = await generateJson(
+  model: model,
+  schema: schema,
+  prompt: transcript,
 );
-
-print(result.object);
-// Output: { patient_name: 'Alice', age: 32, primary_complaint: 'Fever', is_urgent: true }
 ```
 
----
+For a real Dart domain object, always provide a decoder:
 
-### 5. Multi-Turn Agentic Tool Calling (`agentLoop`)
+```dart
+final result = await generateObject<CaseRecord>(
+  model: model,
+  schema: caseRecordSchema,
+  prompt: transcript,
+  parser: CaseRecord.fromJson,
+);
+
+final record = result.object;
+```
+
+SVF validates the generated JSON before decoding it. Invalid fields, missing required properties, unexpected properties, and type mismatches raise `SvfSchemaValidationException` with validation details.
+
+The application owns its domain schemas. SVF deliberately does not contain a form-specific subsystem; a form is simply one possible structured output model.
+
+## Tool calling and agent loops
 
 ```dart
 final lookupTool = SvfTool(
-  name: 'check_inventory',
-  description: 'Checks item stock quantity',
+  name: 'lookup_case',
+  description: 'Looks up a case by its identifier.',
   parameters: SvfSchema.object(
-    properties: {'sku': SvfSchema.string()},
+    properties: {'case_id': SvfSchema.string()},
+    required: ['case_id'],
   ),
-  execute: (args) async => {'sku': args['sku'], 'stock': 42},
+  execute: (arguments) async {
+    return {'case_id': arguments['case_id'], 'status': 'open'};
+  },
 );
 
-final loopResult = await agentLoop(
-  model: svf.openai('gpt-4o', apiKey: 'YOUR_OPENAI_KEY'),
-  messages: [ChatMessage.user('Do we have item A-100 in stock?')],
+final result = await agentLoop(
+  model: model,
+  messages: [ChatMessage.user('Check case C-100.')],
   tools: [lookupTool],
-  maxSteps: 3,
+  maxSteps: 5,
+  toolTimeout: const Duration(seconds: 15),
 );
-
-print(loopResult.text);
 ```
 
----
-
-### 6. Resumable Model Downloader
-
-Download large GGUF / TFLite weights on demand without bundling them in the APK or Web bundle:
+For destructive or sensitive tools, require explicit host approval:
 
 ```dart
-// Watch real-time progress
-svf.downloader.progressStream('whisper-tiny-en').listen((progress) {
-  print('${progress.percentageFormatted} | ${progress.speedFormatted} | ETA: ${progress.estimatedRemainingTime}');
-});
+final tool = SvfTool(
+  name: 'export_record',
+  description: 'Exports the reviewed record.',
+  parameters: exportSchema,
+  requiresApproval: true,
+  approvalReason: 'This writes the final reviewed record to device storage.',
+  execute: exportRecord,
+);
+```
 
-// Download with pause/resume and SHA-256 verification
-final localPath = await svf.downloader.download(
-  ModelRegistry.whisperTinyEn,
+Tool arguments are validated before execution. The agent loop supports maximum steps, cancellation, approval callbacks, and execution timeouts.
+
+## Speech recognition and synthesis
+
+Batch transcription:
+
+```dart
+final transcript = await transcribeAudio(
+  model: svf.whisper(apiKey: 'YOUR_TOKEN'),
+  audio: audioSource,
+  options: const TranscriptionOptions(
+    language: 'en',
+    includeTimestamps: true,
+  ),
+);
+```
+
+Device-native live recognition:
+
+```dart
+final events = streamTranscription(
+  model: svf.deviceSpeech(),
+  options: const TranscriptionOptions(language: 'en-US'),
 );
 
-print('Model ready on disk: $localPath');
+await for (final event in events) {
+  print('${event.isFinal ? "FINAL" : "PARTIAL"}: ${event.text}');
+}
 ```
 
----
+Cloud Whisper endpoints are batch transcription APIs. They can consume an incoming stream and emit a final result, but that is not equivalent to duplex realtime recognition. Use a provider or offline runtime that explicitly supports realtime audio for partial low-latency transcription.
 
-## 🏛️ Architecture Overview
+Text-to-speech:
 
-```
-svf/
-├── lib/
-│   ├── svf.dart                          // Main SDK public exports
-│   │
-│   └── src/
-│       ├── core/                         // Primitives, SvfSchema, AudioSource, Exceptions
-│       ├── audio/                        // Recorder (record: ^7.1.1), Storage, Metadata
-│       ├── visualizer/                   // 60fps Canvas waveform painter & interactive widgets
-│       ├── language/                     // LanguageModel, generateText, streamText, generateObject, streamObject, agentLoop
-│       │   └── providers/                // Gemini, OpenAI, Groq, Ollama, CustomOffline
-│       ├── speech/                       // SpeechToTextModel, transcribeAudio, streamTranscription, DeviceSpeech, WhisperCloud
-│       ├── synthesis/                    // TextToSpeechModel, synthesizeSpeech, OpenAiSpeech
-│       └── downloader/                   // ResumableDownloader (HTTP Range + Checksum), ModelCache, Registry
+```dart
+final audio = await synthesizeSpeech(
+  model: svf.tts(apiKey: 'YOUR_TOKEN'),
+  text: 'The reviewed record is ready.',
+  options: const SynthesisOptions(voice: 'alloy'),
+);
 ```
 
----
+## Offline models and adapters
 
-## 🧪 Testing
+SVF keeps native inference runtimes out of the core package. Integrate Whisper, llama.cpp, ONNX, Genkit, `llm_toolkit`, or another runtime through:
 
-Run all unit and integration tests:
+- `CustomOfflineLanguageModel`;
+- `CustomOfflineSpeechModel`;
+- the shared `LanguageModel` and `SpeechToTextModel` contracts.
+
+This lets the application switch between local and online models without changing its generation, transcription, structured-output, or agent orchestration code.
+
+## Resumable model downloads
+
+```dart
+final progress = svf.downloader.progressStream('whisper-tiny-en');
+final subscription = progress.listen((event) {
+  print('${event.percentageFormatted} ${event.speedFormatted}');
+});
+
+final path = await svf.downloader.download(ModelRegistry.whisperTinyEn);
+await subscription.cancel();
+print('Model artifact ready at $path');
+
+// Pass verified bytes to an application-owned offline runtime when needed.
+final modelBytes = await svf.modelCache.readModelBytes(ModelRegistry.whisperTinyEn);
+```
+
+Downloads use HTTP range requests when supported, write to a partial artifact, verify SHA-256 when a manifest provides it, and promote the verified artifact atomically. A downloaded artifact still needs an offline runtime adapter before it can perform inference.
+
+On Android and other IO platforms, artifacts are stored in the application documents directory. On Web, partial chunks and completed artifacts are stored in IndexedDB so downloads can resume across requests and browser reloads. Browser storage quotas and eviction policies still apply; applications should surface download failures and provide a way to redownload an artifact.
+
+## Architecture
+
+The public API is organized around replaceable boundaries:
+
+```text
+Application
+  ├─ recording / waveform UI
+  ├─ transcript review
+  ├─ domain schema + decoder
+  └─ final persistence/export
+
+SVF orchestration
+  ├─ generateText / streamText
+  ├─ generateJson / generateObject
+  ├─ tool validation + agent loop
+  ├─ transcription and synthesis contracts
+  └─ model download lifecycle
+
+Adapters
+  ├─ record + device speech recognition
+  ├─ OpenAI-compatible HTTP providers
+  ├─ Whisper/TTS providers
+  └─ application-owned offline runtimes
+```
+
+## Testing and quality checks
 
 ```bash
+dart analyze
 flutter test
-```
-
-Run static analysis:
-
-```bash
-flutter analyze
-```
-
----
-
-## 📱 Running the Showcase Example App
-
-Navigate to the `example/` directory and run:
-
-```bash
 cd example
-flutter run
+flutter analyze
+flutter test
+flutter build web --release
 ```
 
----
+The repository tests schema validation, typed output decoding, cancellation, tool execution, OpenRouter request construction, audio-source behavior, routing, download progress, and usage aggregation. Provider integrations should additionally be tested against captured fixtures or a local mock server rather than live credentials.
 
-## 📄 License
+## Production checklist
 
-MIT License. See [LICENSE](LICENSE) for details.
+- Keep cloud credentials behind a server-side proxy for Web.
+- Treat transcripts and generated objects as untrusted until validated and reviewed.
+- Require approval for tools that write, delete, export, purchase, or transmit data.
+- Persist the original audio, transcript, model/provider metadata, and reviewed final object separately.
+- Store model manifests with immutable URLs and checksums.
+- Test microphone permissions, browser HTTPS, background interruption, network loss, cancellation, and provider timeouts on every supported platform.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

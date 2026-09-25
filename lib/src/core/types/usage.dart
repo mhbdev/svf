@@ -45,5 +45,6 @@ class SvfUsage {
   }
 
   @override
-  String toString() => 'SvfUsage(prompt: $promptTokens, completion: $completionTokens, total: $totalTokens, duration: ${durationMs}ms)';
+  String toString() =>
+      'SvfUsage(prompt: $promptTokens, completion: $completionTokens, total: $totalTokens, duration: ${durationMs}ms)';
 }

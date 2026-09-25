@@ -32,7 +32,9 @@ enum SvfAudioFormat {
     if (lower.endsWith('.wav')) return SvfAudioFormat.wav;
     if (lower.endsWith('.m4a')) return SvfAudioFormat.m4a;
     if (lower.endsWith('.aac')) return SvfAudioFormat.aac;
-    if (lower.endsWith('.opus') || lower.endsWith('.ogg')) return SvfAudioFormat.opus;
+    if (lower.endsWith('.opus') || lower.endsWith('.ogg')) {
+      return SvfAudioFormat.opus;
+    }
     if (lower.endsWith('.webm')) return SvfAudioFormat.webm;
     if (lower.endsWith('.pcm')) return SvfAudioFormat.pcm16;
     return SvfAudioFormat.m4a;

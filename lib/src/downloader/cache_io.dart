@@ -13,6 +13,10 @@ Future<int> getFileSize(String path) async {
   return 0;
 }
 
+Future<List<int>> readFileBytes(String path) async {
+  return File(path).readAsBytes();
+}
+
 Future<bool> verifySha256(String filePath, String expectedSha256) async {
   final file = File(filePath);
   if (!await file.exists()) return false;

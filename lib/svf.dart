@@ -1,6 +1,7 @@
 // Core
 export 'src/svf_facade.dart';
 export 'src/core/errors/svf_exception.dart';
+export 'src/core/control/cancellation_token.dart';
 export 'src/core/types/audio_format.dart';
 export 'src/core/types/audio_source.dart';
 export 'src/core/types/usage.dart';
@@ -12,13 +13,18 @@ export 'src/language/contracts/message.dart';
 export 'src/language/contracts/tool.dart';
 export 'src/language/models/generation_result.dart';
 export 'src/language/models/stream_result.dart';
+export 'src/language/models/generation_event.dart';
+export 'src/language/models/generate_request.dart';
+export 'src/language/models/model_info.dart';
 export 'src/language/operations/generate_text.dart';
 export 'src/language/operations/stream_text.dart';
 export 'src/language/operations/generate_object.dart';
+export 'src/language/operations/generate_json.dart';
 export 'src/language/operations/stream_object.dart';
 export 'src/language/agent/agent_loop.dart';
 export 'src/language/providers/gemini_language_model.dart';
 export 'src/language/providers/openai_language_model.dart';
+export 'src/language/providers/openrouter_language_model.dart';
 export 'src/language/providers/groq_language_model.dart';
 export 'src/language/providers/ollama_language_model.dart';
 export 'src/language/providers/custom_offline_language_model.dart';

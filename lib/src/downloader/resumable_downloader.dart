@@ -6,7 +6,9 @@ import 'manifest.dart';
 import 'progress.dart';
 
 // Platform chunk appender
-import 'downloader_io.dart' if (dart.library.js_interop) 'downloader_web.dart' as platform_dl;
+import 'downloader_io.dart'
+    if (dart.library.js_interop) 'downloader_web.dart'
+    as platform_dl;
 
 /// Active download session record.
 class _ActiveSession {
@@ -17,10 +19,7 @@ class _ActiveSession {
   bool isPaused = false;
   bool isCanceled = false;
 
-  _ActiveSession({
-    required this.manifest,
-    required this.controller,
-  });
+  _ActiveSession({required this.manifest, required this.controller});
 }
 
 /// Enterprise-grade resumable model downloader using standard HTTP Range headers.
@@ -29,20 +28,23 @@ class ResumableDownloader {
   final ModelCache cache;
   final http.Client _client;
   final Map<String, _ActiveSession> _sessions = {};
+  final Map<String, StreamController<DownloadProgress>> _progressControllers =
+      {};
 
-  ResumableDownloader({
-    ModelCache? cache,
-    http.Client? client,
-  })  : cache = cache ?? ModelCache(),
-        _client = client ?? http.Client();
+  ResumableDownloader({ModelCache? cache, http.Client? client})
+    : cache = cache ?? ModelCache(),
+      _client = client ?? http.Client();
 
   /// Obtains the reactive progress stream for a specific model download.
   Stream<DownloadProgress> progressStream(String modelId) {
-    if (_sessions.containsKey(modelId)) {
-      return _sessions[modelId]!.controller.stream;
-    }
-    final controller = StreamController<DownloadProgress>.broadcast();
-    return controller.stream;
+    final active = _sessions[modelId];
+    if (active != null) return active.controller.stream;
+    return _progressControllers
+        .putIfAbsent(
+          modelId,
+          () => StreamController<DownloadProgress>.broadcast(),
+        )
+        .stream;
   }
 
   /// Downloads a model specified by [manifest].
@@ -79,7 +81,9 @@ class ResumableDownloader {
       manifest.id,
       () => _ActiveSession(
         manifest: manifest,
-        controller: StreamController<DownloadProgress>.broadcast(),
+        controller:
+            _progressControllers.remove(manifest.id) ??
+            StreamController<DownloadProgress>.broadcast(),
       ),
     );
 
@@ -87,7 +91,9 @@ class ResumableDownloader {
     session.isCanceled = false;
 
     final partPath = await cache.getPartFilePath(manifest.id);
-    int existingBytes = forceRedownload ? 0 : await cache.getPartFileSize(manifest.id);
+    int existingBytes = forceRedownload
+        ? 0
+        : await cache.getPartFileSize(manifest.id);
 
     _emitProgress(
       manifest.id,
@@ -107,8 +113,10 @@ class ResumableDownloader {
     final streamedResponse = await _client.send(request);
 
     final bool isPartial = streamedResponse.statusCode == 206;
-    if (streamedResponse.statusCode != 200 && streamedResponse.statusCode != 206) {
-      final err = 'Download failed with HTTP status ${streamedResponse.statusCode}';
+    if (streamedResponse.statusCode != 200 &&
+        streamedResponse.statusCode != 206) {
+      final err =
+          'Download failed with HTTP status ${streamedResponse.statusCode}';
       _emitProgress(
         manifest.id,
         DownloadProgress(
@@ -128,7 +136,9 @@ class ResumableDownloader {
     }
 
     final totalBytes = isPartial
-        ? existingBytes + (streamedResponse.contentLength ?? (manifest.sizeBytes - existingBytes))
+        ? existingBytes +
+              (streamedResponse.contentLength ??
+                  (manifest.sizeBytes - existingBytes))
         : (streamedResponse.contentLength ?? manifest.sizeBytes);
 
     final appender = await platform_dl.ChunkAppender.open(
@@ -171,7 +181,7 @@ class ResumableDownloader {
           );
         }
       },
-      onError: (e, st) async {
+      onError: (Object error, StackTrace stackTrace) async {
         await appender.close();
         if (session.isPaused) return;
 
@@ -182,10 +192,12 @@ class ResumableDownloader {
             status: DownloadStatus.failed,
             bytesDownloaded: downloadedBytes,
             totalBytes: totalBytes,
-            error: e.toString(),
+            error: error.toString(),
           ),
         );
-        if (!completer.isCompleted) completer.completeError(e, st);
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
       },
       onDone: () async {
         await appender.flush();
@@ -229,9 +241,13 @@ class ResumableDownloader {
             ),
           );
 
-          final isValid = await cache.verifyChecksum(partPath, manifest.sha256!);
+          final isValid = await cache.verifyChecksum(
+            partPath,
+            manifest.sha256!,
+          );
           if (!isValid) {
-            final err = 'SHA-256 verification failed for downloaded model ${manifest.id}';
+            final err =
+                'SHA-256 verification failed for downloaded model ${manifest.id}';
             _emitProgress(
               manifest.id,
               DownloadProgress(
@@ -243,7 +259,9 @@ class ResumableDownloader {
               ),
             );
             if (!completer.isCompleted) {
-              completer.completeError(SvfDownloadException(err, modelId: manifest.id));
+              completer.completeError(
+                SvfDownloadException(err, modelId: manifest.id),
+              );
             }
             return;
           }
@@ -296,7 +314,9 @@ class ResumableDownloader {
   Future<String> resume(String modelId) async {
     final session = _sessions[modelId];
     if (session == null) {
-      throw SvfDownloadException('No active download session found to resume for model $modelId');
+      throw SvfDownloadException(
+        'No active download session found to resume for model $modelId',
+      );
     }
     return download(session.manifest);
   }
@@ -311,6 +331,7 @@ class ResumableDownloader {
       await session.appender?.close();
       session.appender = null;
       _sessions.remove(modelId);
+      _progressControllers[modelId] = session.controller;
     }
     await cache.deleteModel(modelId);
     _emitProgress(
@@ -328,6 +349,12 @@ class ResumableDownloader {
     final session = _sessions[modelId];
     if (session != null && !session.controller.isClosed) {
       session.controller.add(progress);
+      return;
+    }
+
+    final controller = _progressControllers[modelId];
+    if (controller != null && !controller.isClosed) {
+      controller.add(progress);
     }
   }
 
@@ -339,5 +366,9 @@ class ResumableDownloader {
       session.controller.close();
     }
     _sessions.clear();
+    for (final controller in _progressControllers.values) {
+      controller.close();
+    }
+    _progressControllers.clear();
   }
 }

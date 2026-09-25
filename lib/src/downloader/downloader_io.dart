@@ -11,7 +11,9 @@ class ChunkAppender {
   static Future<ChunkAppender> open(String path, {bool append = true}) async {
     final file = File(path);
     await file.parent.create(recursive: true);
-    final sink = file.openWrite(mode: append ? FileMode.append : FileMode.write);
+    final sink = file.openWrite(
+      mode: append ? FileMode.append : FileMode.write,
+    );
     return ChunkAppender._(sink, path);
   }
 

@@ -4,7 +4,9 @@ import '../../core/types/audio_format.dart';
 import '../../core/types/audio_source.dart';
 
 // Conditional storage helpers
-import 'audio_store_io.dart' if (dart.library.js_interop) 'audio_store_web.dart' as platform_store;
+import 'audio_store_io.dart'
+    if (dart.library.js_interop) 'audio_store_web.dart'
+    as platform_store;
 
 /// Manages local audio file storage, directory paths, and persistence.
 class SvfAudioStore {
@@ -33,11 +35,9 @@ class SvfAudioStore {
       // On web, triggers browser file download or keeps in memory
       return platform_store.saveAudioBytes(bytes, source.name);
     }
-    final targetPath = customPath ??
-        await generateRecordingPath(
-          prefix: prefix,
-          format: source.format,
-        );
+    final targetPath =
+        customPath ??
+        await generateRecordingPath(prefix: prefix, format: source.format);
     return platform_store.saveAudioBytesToDisk(bytes, targetPath);
   }
 }

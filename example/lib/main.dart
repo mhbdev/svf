@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:svf/svf.dart';
 
@@ -13,700 +16,1391 @@ class SvfExampleApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Smart Voice Foundation (SVF)',
+      title: 'Smart Voice Foundation',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6750A4),
+          seedColor: const Color(0xFF2F6B58),
           brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF7F8F4),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: Colors.black.withValues(alpha: 0.07)),
+          ),
         ),
         useMaterial3: true,
       ),
-      home: const SvfHomeDashboard(),
+      home: const SvfShowcasePage(),
     );
   }
 }
 
-class SvfHomeDashboard extends StatefulWidget {
-  const SvfHomeDashboard({super.key});
+class SvfShowcasePage extends StatefulWidget {
+  const SvfShowcasePage({super.key});
 
   @override
-  State<SvfHomeDashboard> createState() => _SvfHomeDashboardState();
+  State<SvfShowcasePage> createState() => _SvfShowcasePageState();
 }
 
-class _SvfHomeDashboardState extends State<SvfHomeDashboard>
+class _SvfShowcasePageState extends State<SvfShowcasePage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+  late final TabController _tabs;
   late final Svf _svf;
-  late final SvfWaveformController _waveformController;
+  late final SvfWaveformController _waveform;
+  late final DemoSpeechModel _demoSpeech;
+  late final DemoLanguageModel _demoModel;
+  late final DemoSpeechSynthesis _demoTts;
 
-  // Selected AI Provider
-  String _selectedProvider = 'Mock (Offline Test)';
-  final TextEditingController _apiKeyController = TextEditingController();
+  final _promptController = TextEditingController(
+    text: 'Summarize the reviewed voice note in two sentences.',
+  );
+  final _apiKeyController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _ageController = TextEditingController();
+  final _notesController = TextEditingController();
 
-  // Audio Recording State
-  SvfRecorderState _recordState = SvfRecorderState.idle;
-  SvfAudioSource? _lastRecordedAudio;
+  String _provider = 'Demo offline';
   String _transcript = '';
-  bool _isTranscribing = false;
-  bool _isExtracting = false;
+  String _streamedText = '';
+  String _agentResult = '';
+  String _structuredJson = '';
+  String _eventLog = '';
+  String _operationStatus = 'Choose an operation to inspect its result.';
+  String _voiceStatus = 'Ready';
+  String _ttsStatus = 'Not synthesized';
+  String _audioDetails = 'No audio source captured yet.';
+  String _agentTrace = 'No agent run yet.';
+  SvfAudioSource? _recording;
+  SvfRecorderState _recordState = SvfRecorderState.idle;
+  bool _busy = false;
+  bool _urgent = false;
+  bool _approvalRequired = true;
+  CancellationToken? _generationCancellation;
 
-  // Editable Form Controllers (Human-in-the-Loop)
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _ageController = TextEditingController();
-  final TextEditingController _notesController = TextEditingController();
-  final TextEditingController _durationController = TextEditingController();
-  String _selectedComplaint = 'Fever';
-  String _selectedSeverity = 'Moderate';
-  bool _isUrgent = false;
-
-  // Model Downloader State
-  final Map<String, DownloadProgress> _downloadProgressMap = {};
-
-  // Form Schema Definition
-  final SvfObjectSchema _intakeSchema = SvfSchema.object(
-    description: 'Medical patient intake form',
+  static final _caseSchema = SvfSchema.object(
+    description: 'A reviewed voice-note case record.',
     properties: {
-      'patient_name': SvfSchema.string(description: 'Full name of patient'),
-      'age': SvfSchema.integer(description: 'Patient age in years'),
-      'primary_complaint': SvfSchema.enumeration(
-        ['Fever', 'Headache', 'Cough', 'Chest Pain', 'Fatigue', 'Back Pain'],
-        description: 'Primary symptom or complaint',
+      'name': SvfSchema.string(description: 'Person name'),
+      'age': SvfSchema.integer(description: 'Person age', minimum: 0),
+      'summary': SvfSchema.string(description: 'Reviewed summary'),
+      'urgent': SvfSchema.boolean(
+        description: 'Whether urgent follow-up is needed',
       ),
-      'duration_days': SvfSchema.integer(description: 'Duration of symptoms in days'),
-      'severity': SvfSchema.enumeration(['Mild', 'Moderate', 'Severe']),
-      'notes': SvfSchema.string(description: 'Clinical observation notes'),
-      'is_urgent': SvfSchema.boolean(description: 'Whether immediate attention is needed'),
     },
-    required: ['patient_name', 'primary_complaint', 'severity'],
+    required: ['name', 'age', 'summary', 'urgent'],
   );
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
     _svf = Svf();
-    _waveformController = SvfWaveformController(maxVisibleSamples: 90);
-
-    // Bind recorder states to local UI
+    _waveform = SvfWaveformController(maxVisibleSamples: 96);
+    _demoSpeech = DemoSpeechModel();
+    _demoModel = DemoLanguageModel();
+    _demoTts = DemoSpeechSynthesis();
     _svf.recorder.stateStream.listen((state) {
       if (mounted) setState(() => _recordState = state);
     });
-
-    _waveformController.attachRecorder(_svf.recorder);
+    _waveform.attachRecorder(_svf.recorder);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _waveformController.dispose();
+    _tabs.dispose();
+    _waveform.dispose();
     _svf.dispose();
+    _promptController.dispose();
+    _apiKeyController.dispose();
     _nameController.dispose();
     _ageController.dispose();
     _notesController.dispose();
-    _durationController.dispose();
-    _apiKeyController.dispose();
     super.dispose();
   }
 
-  // --- Voice Recording Operations ---
-
-  Future<void> _toggleRecord() async {
-    if (_recordState.isRecording) {
-      final audioSource = await _svf.recorder.stop();
-      setState(() {
-        _lastRecordedAudio = audioSource;
-      });
-
-      // Auto-transcribe upon recording completion
-      await _runTranscription(audioSource);
-    } else {
-      _waveformController.clear();
-      setState(() {
-        _transcript = '';
-      });
-      await _svf.recorder.start();
-    }
-  }
-
-  Future<void> _runTranscription(SvfAudioSource audio) async {
-    setState(() => _isTranscribing = true);
-
-    try {
-      if (_selectedProvider == 'Mock (Offline Test)') {
-        // Deterministic realistic transcription simulation
-        await Future.delayed(const Duration(milliseconds: 600));
-        setState(() {
-          _transcript =
-              'Patient Alice Henderson, 34 years old, reports severe headache and moderate fever for 3 days. She complains of fatigue, no chest pain. Case marked urgent.';
-        });
-      } else if (_selectedProvider == 'Groq (Whisper Cloud)') {
-        final whisper = _svf.groqWhisper(apiKey: _apiKeyController.text.trim());
-        final result = await transcribeAudio(model: whisper, audio: audio);
-        setState(() => _transcript = result.text);
-      } else if (_selectedProvider == 'OpenAI (Whisper Cloud)') {
-        final whisper = _svf.whisper(apiKey: _apiKeyController.text.trim());
-        final result = await transcribeAudio(model: whisper, audio: audio);
-        setState(() => _transcript = result.text);
-      } else {
-        // Device Speech
-        setState(() {
-          _transcript = 'Patient recorded audio ready for AI structured extraction.';
-        });
-      }
-
-      // Automatically trigger structured AI extraction
-      if (_transcript.isNotEmpty) {
-        await _runStructuredExtraction(_transcript);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Transcription error: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isTranscribing = false);
-    }
-  }
-
-  // --- Structured Object AI Extraction (generateObject) ---
-
-  Future<void> _runStructuredExtraction(String text) async {
-    setState(() => _isExtracting = true);
-
-    try {
-      final LanguageModel model = _resolveSelectedModel();
-
-      final result = await generateObject(
-        model: model,
-        schema: _intakeSchema,
-        prompt: 'Extract patient intake information from this clinical audio transcript: "$text"',
-      );
-
-      final data = result.object;
-      setState(() {
-        _nameController.text = data['patient_name']?.toString() ?? '';
-        _ageController.text = data['age']?.toString() ?? '';
-        _selectedComplaint = data['primary_complaint']?.toString() ?? 'Headache';
-        _durationController.text = data['duration_days']?.toString() ?? '3';
-        _selectedSeverity = data['severity']?.toString() ?? 'Moderate';
-        _notesController.text = data['notes']?.toString() ?? text;
-        _isUrgent = data['is_urgent'] == true;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Form populated via generateObject! Review & edit below.'),
-            backgroundColor: Colors.teal,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('AI Extraction error: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isExtracting = false);
-    }
-  }
-
-  LanguageModel _resolveSelectedModel() {
+  LanguageModel _selectedModel() {
     final key = _apiKeyController.text.trim();
+    return switch (_provider) {
+      'OpenRouter' => _svf.openRouter(
+        'openai/gpt-4o-mini',
+        apiKey: key,
+        httpReferer: 'https://example.invalid',
+        appTitle: 'SVF Showcase',
+      ),
+      'OpenAI' => _svf.openai('gpt-4o-mini', apiKey: key),
+      'Groq' => _svf.groq('llama-3.3-70b-versatile', apiKey: key),
+      'Ollama' => _svf.ollama('llama3.2'),
+      _ => _demoModel,
+    };
+  }
 
-    if (_selectedProvider == 'Google Gemini') {
-      return _svf.gemini('gemini-1.5-flash', apiKey: key);
-    } else if (_selectedProvider == 'OpenAI (GPT-4o)') {
-      return _svf.openai('gpt-4o-mini', apiKey: key);
-    } else if (_selectedProvider == 'Groq (Llama 3.3)') {
-      return _svf.groq('llama-3.3-70b-versatile', apiKey: key);
-    } else if (_selectedProvider == 'Ollama (Local)') {
-      return _svf.ollama('llama3.2');
+  Future<void> _runEndToEndDemo() async {
+    setState(() => _busy = true);
+    try {
+      final audio = SvfAudioSource.fromBytes(
+        Uint8List.fromList(List<int>.filled(32, 0)),
+        format: SvfAudioFormat.wav,
+      );
+      final transcription = await _svf.transcribe(
+        model: _demoSpeech,
+        audio: audio,
+      );
+      final structured = await _svf.generateObject<DemoCaseRecord>(
+        model: _demoModel,
+        schema: _caseSchema,
+        prompt: transcription.text,
+        parser: DemoCaseRecord.fromJson,
+      );
+      _applyRecord(structured.object);
+      final audioBytes = await audio.readBytes();
+      setState(() {
+        _recording = audio;
+        _transcript = transcription.text;
+        _audioDetails =
+            '${audio.name} · ${audio.mimeType} · ${audioBytes.length} bytes';
+        _voiceStatus = 'Transcribed, validated, and ready for review';
+      });
+      await _runStreaming();
+      await _runAgent(showFeedback: false);
+      await _runTts();
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
+  }
 
-    // Mock Offline Model
-    return CustomOfflineLanguageModel(
-      modelId: 'mock-offline-llm',
-      onGenerate: ({required messages, responseSchema, tools, temperature, maxTokens}) async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        return const GenerateTextResult(
-          text: '''
-{
-  "patient_name": "Alice Henderson",
-  "age": 34,
-  "primary_complaint": "Headache",
-  "duration_days": 3,
-  "severity": "Severe",
-  "notes": "Patient reports severe headache and fever. No chest pain noted.",
-  "is_urgent": true
-}
-''',
-          usage: SvfUsage(promptTokens: 45, completionTokens: 38),
+  Future<void> _toggleRecording() async {
+    try {
+      if (_recordState.isRecording) {
+        final audio = await _svf.recorder.stop();
+        setState(() => _recording = audio);
+        final result = await _svf.transcribe(model: _demoSpeech, audio: audio);
+        final audioBytes = await audio.readBytes();
+        setState(() {
+          _transcript = result.text;
+          _audioDetails =
+              '${audio.name} · ${audio.mimeType} · ${audioBytes.length} bytes';
+          _voiceStatus = 'Recording transcribed with the offline demo adapter';
+        });
+      } else {
+        _waveform.clear();
+        await _svf.recorder.start(format: SvfAudioFormat.webm);
+      }
+    } catch (error) {
+      if (mounted) _showMessage('Recording unavailable: $error');
+    }
+  }
+
+  Future<void> _runStructuredOutput() async {
+    setState(() => _busy = true);
+    try {
+      final result = await _svf.generateObject<DemoCaseRecord>(
+        model: _selectedModel(),
+        schema: _caseSchema,
+        prompt: _transcript.isEmpty ? _promptController.text : _transcript,
+        parser: DemoCaseRecord.fromJson,
+      );
+      _applyRecord(result.object);
+      if (mounted) {
+        _showMessage(
+          'Structured output validated and applied to the editable review.',
         );
+      }
+    } catch (error) {
+      if (mounted) _showMessage('Structured output failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _runGenerateJson() async {
+    setState(() => _busy = true);
+    try {
+      final json = await _svf.generateJson(
+        model: _selectedModel(),
+        schema: _caseSchema,
+        prompt: _transcript.isEmpty ? _promptController.text : _transcript,
+      );
+      if (mounted) {
+        setState(() {
+          _structuredJson = const JsonEncoder.withIndent('  ').convert(json);
+          _operationStatus = 'generateJson returned validated JSON.';
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _operationStatus = 'generateJson failed: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _runStreamObject() async {
+    setState(() => _busy = true);
+    try {
+      final result = _svf.streamObject<DemoCaseRecord>(
+        model: _demoModel,
+        schema: _caseSchema,
+        prompt: _transcript.isEmpty ? _promptController.text : _transcript,
+        parser: DemoCaseRecord.fromJson,
+      );
+      await for (final partial in result.partialObjectStream) {
+        if (mounted) {
+          setState(
+            () => _operationStatus =
+                'streamObject partial: ${partial.keys.join(', ')}',
+          );
+        }
+      }
+      final object = await result.finalObject;
+      if (mounted) {
+        _applyRecord(object);
+        setState(
+          () => _operationStatus = 'streamObject completed and validated.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _operationStatus = 'streamObject failed: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _runEventStream() async {
+    final result = _svf.streamText(
+      model: _selectedModel(),
+      prompt: _promptController.text,
+    );
+    final log = <String>[];
+    await for (final event in result.events!) {
+      switch (event) {
+        case GenerationStarted():
+          log.add('started');
+        case TextDelta(:final text):
+          log.add('text(${text.length})');
+        case ToolCallDelta(:final name):
+          log.add('tool($name)');
+        case GenerationFinished(:final finishReason):
+          log.add('finished(${finishReason.value})');
+        case GenerationFailed(:final error):
+          log.add('failed($error)');
+      }
+      if (mounted) setState(() => _eventLog = log.join(' → '));
+    }
+  }
+
+  void _cancelGeneration() {
+    _generationCancellation?.cancel();
+    if (mounted) setState(() => _operationStatus = 'Cancellation requested.');
+  }
+
+  Future<void> _runStreaming() async {
+    final cancellation = CancellationToken();
+    _generationCancellation = cancellation;
+    final result = _svf.streamText(
+      model: _selectedModel(),
+      prompt: _promptController.text,
+      cancellationToken: cancellation,
+    );
+    final buffer = StringBuffer();
+    try {
+      await for (final chunk in result.textStream) {
+        buffer.write(chunk);
+        if (mounted) setState(() => _streamedText = buffer.toString());
+      }
+    } finally {
+      _generationCancellation = null;
+    }
+  }
+
+  Future<void> _runAgent({bool showFeedback = true}) async {
+    _demoModel.resetAgent();
+    final tool = SvfTool(
+      name: 'lookup_case',
+      description: 'Looks up the status of a case by identifier.',
+      parameters: SvfSchema.object(
+        properties: {'case_id': SvfSchema.string()},
+        required: ['case_id'],
+      ),
+      requiresApproval: showFeedback && _approvalRequired,
+      approvalReason: 'The agent is requesting access to a case record.',
+      execute: (arguments) async => {
+        'case_id': arguments['case_id'],
+        'status': 'review_required',
       },
-      onStream: ({required messages, responseSchema, tools, temperature, maxTokens}) {
-        return Stream.value('{"patient_name": "Alice"}');
-      },
+    );
+    final result = await _svf.agentLoop(
+      model: _demoModel,
+      messages: [
+        ChatMessage.user('Check case C-100 and summarize its status.'),
+      ],
+      tools: [tool],
+      maxSteps: 3,
+      requestApproval: _approvalRequired
+          ? (tool, call) => _requestToolApproval(tool, call)
+          : null,
+    );
+    if (mounted) {
+      setState(() {
+        _agentResult = result.text;
+        _agentTrace = result.steps
+            .map(
+              (step) =>
+                  'step ${step.stepIndex}: ${step.toolExecutions.isEmpty ? 'model response' : step.toolExecutions.map((call) => call.toolCall.name).join(', ')}',
+            )
+            .join('\n');
+      });
+      if (showFeedback) {
+        _showMessage(
+          'Agent completed ${result.steps.length} step${result.steps.length == 1 ? '' : 's'} with ${result.totalUsage.totalTokens} tokens.',
+        );
+      }
+    }
+  }
+
+  Future<void> _runLiveTranscription() async {
+    final buffer = StringBuffer();
+    await for (final event in _svf.streamTranscription(model: _demoSpeech)) {
+      buffer
+        ..clear()
+        ..write(event.text);
+      if (mounted) {
+        setState(
+          () => _voiceStatus =
+              '${event.isFinal ? 'Final' : 'Partial'}: ${event.text}',
+        );
+      }
+    }
+  }
+
+  Future<void> _runBatchTranscription() async {
+    final audio =
+        _recording ??
+        SvfAudioSource.fromBytes(
+          Uint8List.fromList(List<int>.filled(32, 0)),
+          format: SvfAudioFormat.wav,
+        );
+    final result = await _svf.transcribe(model: _demoSpeech, audio: audio);
+    final bytes = await audio.readBytes();
+    if (mounted) {
+      setState(() {
+        _recording = audio;
+        _transcript = result.text;
+        _audioDetails =
+            '${audio.name} · ${audio.mimeType} · ${bytes.length} bytes';
+        _voiceStatus =
+            'Batch transcription completed with confidence ${result.confidence?.toStringAsFixed(2) ?? 'n/a'}';
+      });
+    }
+  }
+
+  Future<void> _runRouterTranscription() async {
+    final router = _svf.speechRouter(
+      primary: DemoSpeechModel(supported: false),
+      fallback: _demoSpeech,
+    );
+    final result = await _svf.transcribe(
+      model: router,
+      audio:
+          _recording ??
+          SvfAudioSource.fromBytes(
+            Uint8List.fromList(List<int>.filled(32, 0)),
+            format: SvfAudioFormat.wav,
+          ),
+    );
+    if (mounted) {
+      setState(
+        () => _voiceStatus =
+            'Router selected the fallback adapter: ${result.text}',
+      );
+    }
+  }
+
+  Future<void> _runTts() async {
+    final audio = await _svf.synthesize(
+      model: _demoTts,
+      text: _notesController.text.isEmpty
+          ? 'SVF synthesis is ready.'
+          : _notesController.text,
+    );
+    final bytes = await audio.readBytes();
+    if (mounted) {
+      setState(() {
+        _ttsStatus = 'Generated ${bytes.length} bytes of audio';
+        _audioDetails =
+            '${audio.name} · ${audio.mimeType} · ${bytes.length} bytes';
+      });
+    }
+  }
+
+  Widget _buildAgentsTab() {
+    return ListView(
+      key: const ValueKey('agents-page'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        _sectionCard(
+          title: 'Agent loop with explicit tool approval',
+          subtitle:
+              'Agents are ordinary typed model operations. Tools declare schemas, execution stays in your process, and approval can pause before side effects.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: SwitchListTile(
+                  key: const ValueKey('approval-toggle'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Require approval before tool execution'),
+                  value: _approvalRequired,
+                  onChanged: (value) =>
+                      setState(() => _approvalRequired = value),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                key: const ValueKey('run-agent'),
+                onPressed: _busy ? null : _runAgent,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Run approved agent loop'),
+              ),
+              if (_agentResult.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(_agentResult, key: const ValueKey('agents-result')),
+              ],
+              _codeBlock('Agent trace', _agentTrace),
+              _codeBlock(
+                'Tool contract',
+                '{\n  "name": "lookup_case",\n  "parameters": { "case_id": "string" },\n  "approval": "optional"\n}',
+              ),
+            ],
+          ),
+        ),
+        _sectionCard(
+          title: 'Production controls',
+          subtitle:
+              'The same loop supports max steps, cancellation, provider options, usage reporting, and typed tool results.',
+          child: const Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(label: Text('maxSteps')),
+              Chip(label: Text('requestApproval')),
+              Chip(label: Text('tool schema validation')),
+              Chip(label: Text('usage accounting')),
+              Chip(label: Text('typed tool output')),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
-  // --- Human-In-The-Loop Approval & Export ---
-
-  Future<void> _approveAndExport() async {
-    final finalData = {
-      'patient_name': _nameController.text.trim(),
-      'age': int.tryParse(_ageController.text.trim()) ?? 0,
-      'primary_complaint': _selectedComplaint,
-      'duration_days': int.tryParse(_durationController.text.trim()) ?? 1,
-      'severity': _selectedSeverity,
-      'notes': _notesController.text.trim(),
-      'is_urgent': _isUrgent,
-      'transcript': _transcript,
-      'timestamp': DateTime.now().toIso8601String(),
-    };
-
-    final formattedJson = const JsonEncoder.withIndent('  ').convert(finalData);
-
-    // Save audio if present
-    if (_lastRecordedAudio != null) {
-      await SvfAudioStore.saveRecording(
-        source: _lastRecordedAudio!,
-        prefix: 'patient_intake',
-      );
-    }
-
-
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
+  Widget _buildFacadeTab() {
+    const providers = [
+      'Demo / custom offline',
+      'OpenAI-compatible',
+      'OpenRouter',
+      'Groq',
+      'Ollama',
+      'Gemini',
+      'Whisper / Groq Whisper',
+      'Device speech',
+      'OpenAI TTS',
+    ];
+    const operations = [
+      'generateText',
+      'streamText + normalized events',
+      'generateJson',
+      'generateObject<T>',
+      'streamObject<T>',
+      'agentLoop',
+      'transcribe',
+      'streamTranscription',
+      'synthesize',
+    ];
+    return ListView(
+      key: const ValueKey('facade-page'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        _sectionCard(
+          title: 'One facade, explicit escape hatches',
+          subtitle:
+              'Svf is the ergonomic entry point. Every provider and operation remains independently typed and injectable for advanced applications and tests.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.check_circle, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Form Approved & Exported'),
+              Text('Runtime', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text('isDisposed: ${_svf.isDisposed}'),
+              Text('transport: ${_svf.httpClient.runtimeType}'),
+              Text('cache: ${_svf.modelCache.runtimeType}'),
+              const SizedBox(height: 16),
+              Text(
+                'Provider adapters',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: providers
+                    .map((item) => Chip(label: Text(item)))
+                    .toList(),
+              ),
             ],
           ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Verified structured data (saved locally):'),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade900,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    formattedJson,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      color: Colors.greenAccent,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close'),
-            ),
-          ],
         ),
-      );
-    }
+        _sectionCard(
+          title: 'Shared operation vocabulary',
+          subtitle:
+              'Switch models without rewriting your application workflow.',
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: operations
+                .map((item) => Chip(label: Text(item)))
+                .toList(),
+          ),
+        ),
+        _sectionCard(
+          title: 'Typical integration',
+          subtitle:
+              'The facade keeps application code small while preserving strict contracts.',
+          child: _codeBlock(
+            'Dart',
+            "final result = await svf.generateObject<MyRecord>(\n  model: model,\n  schema: schema,\n  prompt: transcript,\n  parser: MyRecord.fromJson,\n);",
+          ),
+        ),
+      ],
+    );
   }
 
-  // --- Resumable Model Downloader Handlers ---
+  Future<bool> _requestToolApproval(SvfTool tool, ToolCall call) async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Approve tool call?'),
+        content: Text(
+          '${tool.name}\n${tool.approvalReason ?? 'This action was requested by the model.'}\n\nArguments: ${call.arguments}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Deny'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+    return approved ?? false;
+  }
 
-  void _startModelDownload(ModelManifest manifest) {
-    _svf.downloader.progressStream(manifest.id).listen((progress) {
-      if (mounted) {
-        setState(() {
-          _downloadProgressMap[manifest.id] = progress;
-        });
-      }
-    });
+  void _applyRecord(DemoCaseRecord record) {
+    _nameController.text = record.name;
+    _ageController.text = record.age.toString();
+    _notesController.text = record.summary;
+    _urgent = record.urgent;
+  }
 
-    _svf.downloader.download(manifest).then((path) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Downloaded & verified: ${manifest.name}')),
-        );
-      }
-    }).catchError((e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
-        );
-      }
-    });
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Smart Voice Foundation (SVF)'),
-        elevation: 1,
+        title: const Text('SVF Showcase'),
         bottom: TabBar(
-          controller: _tabController,
+          controller: _tabs,
+          isScrollable: true,
           tabs: const [
-            Tab(icon: Icon(Icons.mic), text: 'Voice-to-Form (HITL)'),
-            Tab(icon: Icon(Icons.download), text: 'Model Downloader'),
+            Tab(
+              key: ValueKey('tab-end-to-end'),
+              icon: Icon(Icons.mic),
+              text: 'End-to-end',
+            ),
+            Tab(
+              key: ValueKey('tab-ai-sdk'),
+              icon: Icon(Icons.auto_awesome),
+              text: 'AI SDK',
+            ),
+            Tab(
+              key: ValueKey('tab-voice'),
+              icon: Icon(Icons.graphic_eq),
+              text: 'Voice lab',
+            ),
+            Tab(
+              key: ValueKey('tab-downloads'),
+              icon: Icon(Icons.download),
+              text: 'Downloads',
+            ),
+            Tab(
+              key: ValueKey('tab-agents'),
+              icon: Icon(Icons.build_circle_outlined),
+              text: 'Agents',
+            ),
+            Tab(
+              key: ValueKey('tab-facade'),
+              icon: Icon(Icons.menu_book_outlined),
+              text: 'Facade map',
+            ),
           ],
         ),
       ),
       body: TabBarView(
-        controller: _tabController,
+        controller: _tabs,
         children: [
-          _buildVoiceToFormTab(),
-          _buildModelDownloaderTab(),
+          _buildEndToEndTab(),
+          _buildAiSdkTab(),
+          _buildVoiceTab(),
+          _buildDownloadsTab(),
+          _buildAgentsTab(),
+          _buildFacadeTab(),
         ],
       ),
     );
   }
 
-  // --- TAB 1: Voice-to-Form & Human-in-the-Loop Review ---
-
-  Widget _buildVoiceToFormTab() {
-    return SingleChildScrollView(
+  Widget _buildEndToEndTab() {
+    return ListView(
+      key: const ValueKey('end-to-end-page'),
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Provider Configuration Bar
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('AI Provider & Inference Mode:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedProvider,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                    items: const [
-                      DropdownMenuItem(value: 'Mock (Offline Test)', child: Text('Mock Engine (Zero Setup / Offline Test)')),
-                      DropdownMenuItem(value: 'Google Gemini', child: Text('Google Gemini (Direct REST)')),
-                      DropdownMenuItem(value: 'Groq (Llama 3.3)', child: Text('Groq Cloud (Llama 3.3 / Whisper)')),
-                      DropdownMenuItem(value: 'OpenAI (GPT-4o)', child: Text('OpenAI (GPT-4o / Whisper)')),
-                      DropdownMenuItem(value: 'Ollama (Local)', child: Text('Ollama (Localhost:11434)')),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedProvider = val);
-                    },
-                  ),
-                  if (_selectedProvider != 'Mock (Offline Test)' && _selectedProvider != 'Ollama (Local)') ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _apiKeyController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'API Key',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ],
-                ],
+      children: [
+        _sectionCard(
+          title: 'Voice → transcript → structured review',
+          subtitle:
+              'The default demo is offline, deterministic, and safe to run without credentials.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FilledButton.icon(
+                key: const ValueKey('run-end-to-end'),
+                onPressed: _busy ? null : _runEndToEndDemo,
+                icon: const Icon(Icons.play_circle),
+                label: const Text('Run complete offline workflow'),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Live Waveform Visualizer (Canvas 60fps)
-          Card(
-            color: Colors.grey.shade900,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 90,
-                    child: SvfLiveWaveform(
-                      controller: _waveformController,
-                      style: const SvfWaveformStyle(
-                        barColor: Colors.cyanAccent,
-                        barWidth: 3.5,
-                        barSpacing: 3.0,
-                        barRadius: 2.0,
-                        isSymmetric: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _toggleRecord,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _recordState.isRecording ? Colors.red : Colors.deepPurple,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        ),
-                        icon: Icon(_recordState.isRecording ? Icons.stop : Icons.mic),
-                        label: Text(_recordState.isRecording ? 'Stop & Process Voice' : 'Start Recording'),
-                      ),
-                      if (_recordState.isRecording) ...[
-                        const SizedBox(width: 12),
-                        IconButton(
-                          onPressed: () {
-                            if (_recordState.isPaused) {
-                              _svf.recorder.resume();
-                            } else {
-                              _svf.recorder.pause();
-                            }
-                          },
-                          icon: Icon(_recordState.isPaused ? Icons.play_arrow : Icons.pause, color: Colors.white),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Speech Transcript & Status
-          if (_isTranscribing || _isExtracting) ...[
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(width: 12),
-                    Text('Processing audio & extracting structured fields...'),
-                  ],
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('record-button'),
+                onPressed: _toggleRecording,
+                icon: Icon(_recordState.isRecording ? Icons.stop : Icons.mic),
+                label: Text(
+                  _recordState.isRecording
+                      ? 'Stop recording'
+                      : 'Record with microphone',
                 ),
               ),
-            ),
-          ],
-          if (_transcript.isNotEmpty) ...[
-            Card(
-              color: Colors.deepPurple.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.record_voice_over, size: 18, color: Colors.deepPurple),
-                        SizedBox(width: 6),
-                        Text('Voice Transcription:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(_transcript),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          // Human-in-the-Loop Editable Form Section
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.assignment, color: Colors.deepPurple),
-                      SizedBox(width: 8),
-                      Text('Human-in-the-Loop Patient Review', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const Text('Review AI extracted fields and make manual corrections if needed:', style: TextStyle(color: Colors.grey)),
-                  const Divider(height: 24),
-                  TextField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(labelText: 'Patient Full Name', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _ageController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Age', border: OutlineInputBorder()),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _durationController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Duration (Days)', border: OutlineInputBorder()),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue: _selectedComplaint,
-                          decoration: const InputDecoration(labelText: 'Primary Complaint', border: OutlineInputBorder()),
-                          items: ['Fever', 'Headache', 'Cough', 'Chest Pain', 'Fatigue', 'Back Pain']
-                              .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _selectedComplaint = val);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue: _selectedSeverity,
-                          decoration: const InputDecoration(labelText: 'Severity', border: OutlineInputBorder()),
-                          items: ['Mild', 'Moderate', 'Severe']
-                              .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _selectedSeverity = val);
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _notesController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: 'Clinical Notes', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    title: const Text('Mark as Urgent Case'),
-                    value: _isUrgent,
-                    onChanged: (val) => setState(() => _isUrgent = val),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: _approveAndExport,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('Approve & Export Verified Data', style: TextStyle(fontSize: 16)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- TAB 2: Resumable Model Downloader ---
-
-  Widget _buildModelDownloaderTab() {
-    final models = ModelRegistry.allBuiltIn;
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: models.length,
-      itemBuilder: (context, index) {
-        final manifest = models[index];
-        final progress = _downloadProgressMap[manifest.id];
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(manifest.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    ),
-                    Chip(
-                      label: Text(manifest.formattedSize),
-                      backgroundColor: Colors.grey.shade200,
-                    ),
-                  ],
-                ),
-                if (manifest.description != null) ...[
-                  const SizedBox(height: 4),
-                  Text(manifest.description!, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                ],
+              const SizedBox(height: 12),
+              Text(_voiceStatus),
+              if (_transcript.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                if (progress != null) ...[
-                  LinearProgressIndicator(
-                    value: progress.fraction > 0 ? progress.fraction : null,
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Status: ${progress.status.name.toUpperCase()}'),
-                      Text('${progress.percentageFormatted} (${progress.speedFormatted})'),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (progress?.status == DownloadStatus.downloading) ...[
-                      TextButton.icon(
-                        onPressed: () => _svf.downloader.pause(manifest.id),
-                        icon: const Icon(Icons.pause),
-                        label: const Text('Pause'),
-                      ),
-                      TextButton.icon(
-                        onPressed: () => _svf.downloader.cancel(manifest.id),
-                        icon: const Icon(Icons.cancel, color: Colors.red),
-                        label: const Text('Cancel', style: TextStyle(color: Colors.red)),
-                      ),
-                    ] else if (progress?.status == DownloadStatus.paused) ...[
-                      ElevatedButton.icon(
-                        onPressed: () => _svf.downloader.resume(manifest.id),
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Resume Download'),
-                      ),
-                    ] else ...[
-                      ElevatedButton.icon(
-                        onPressed: () => _startModelDownload(manifest),
-                        icon: const Icon(Icons.download),
-                        label: const Text('Download Model'),
-                      ),
-                    ],
-                  ],
-                ),
+                SelectableText(_transcript, key: const ValueKey('transcript')),
               ],
-            ),
+              if (_recording != null)
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Audio source captured and retained for review.'),
+                ),
+            ],
           ),
-        );
-      },
+        ),
+        _sectionCard(
+          title: 'Human-in-the-loop review',
+          subtitle:
+              'AI output is never the final record until the user reviews and edits it.',
+          child: Column(
+            children: [
+              TextField(
+                key: const ValueKey('name-field'),
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              TextField(
+                key: const ValueKey('age-field'),
+                controller: _ageController,
+                decoration: const InputDecoration(labelText: 'Age'),
+              ),
+              TextField(
+                key: const ValueKey('notes-field'),
+                controller: _notesController,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Reviewed notes'),
+              ),
+              Material(
+                color: Colors.transparent,
+                child: SwitchListTile(
+                  key: const ValueKey('urgent-field'),
+                  title: const Text('Urgent follow-up'),
+                  value: _urgent,
+                  onChanged: (value) => setState(() => _urgent = value),
+                ),
+              ),
+              FilledButton.icon(
+                key: const ValueKey('approve-export'),
+                onPressed: _showExportDialog,
+                icon: const Icon(Icons.verified),
+                label: const Text('Approve and export reviewed record'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
+
+  Widget _buildAiSdkTab() {
+    return ListView(
+      key: const ValueKey('ai-sdk-page'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        _sectionCard(
+          title: 'Provider-neutral AI operations',
+          subtitle:
+              'Switch between demo offline, OpenAI, OpenRouter, Groq, and Ollama using the same operations.',
+          child: Column(
+            children: [
+              DropdownButtonFormField<String>(
+                key: const ValueKey('provider-picker'),
+                initialValue: _provider,
+                items:
+                    const [
+                          'Demo offline',
+                          'OpenRouter',
+                          'OpenAI',
+                          'Groq',
+                          'Ollama',
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) =>
+                    setState(() => _provider = value ?? 'Demo offline'),
+                decoration: const InputDecoration(labelText: 'Provider'),
+              ),
+              if (_provider != 'Demo offline' && _provider != 'Ollama')
+                TextField(
+                  controller: _apiKeyController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'API key'),
+                ),
+              TextField(
+                key: const ValueKey('prompt-field'),
+                controller: _promptController,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Prompt'),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton(
+                    key: const ValueKey('generate-text'),
+                    onPressed: _busy
+                        ? null
+                        : () async => _showResult(
+                            await _svf.generateText(
+                              model: _selectedModel(),
+                              prompt: _promptController.text,
+                            ),
+                          ),
+                    child: const Text('generateText'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('stream-text'),
+                    onPressed: _busy ? null : _runStreaming,
+                    child: const Text('streamText'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('generate-object'),
+                    onPressed: _busy ? null : _runStructuredOutput,
+                    child: const Text('generateObject'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('agent-loop'),
+                    onPressed: _busy ? null : _runAgent,
+                    child: const Text('agentLoop'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('generate-json'),
+                    onPressed: _busy ? null : _runGenerateJson,
+                    child: const Text('generateJson'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('stream-object'),
+                    onPressed: _busy ? null : _runStreamObject,
+                    child: const Text('streamObject'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('event-stream'),
+                    onPressed: _busy ? null : _runEventStream,
+                    child: const Text('events'),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('cancel-generation'),
+                    onPressed: _generationCancellation == null
+                        ? null
+                        : _cancelGeneration,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('Cancel'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _operationStatus,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              if (_eventLog.isNotEmpty)
+                _codeBlock('Normalized events', _eventLog),
+              if (_structuredJson.isNotEmpty)
+                _codeBlock('Validated JSON', _structuredJson),
+              if (_streamedText.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      _streamedText,
+                      key: const ValueKey('stream-output'),
+                    ),
+                  ),
+                ),
+              if (_agentResult.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      'Agent: $_agentResult',
+                      key: const ValueKey('agent-output'),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVoiceTab() {
+    return ListView(
+      key: const ValueKey('voice-page'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        _sectionCard(
+          title: 'Realtime voice primitives',
+          subtitle:
+              'Partial/final transcription events, amplitude streams, waveform rendering, and TTS output.',
+          child: Column(
+            children: [
+              Container(
+                height: 96,
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(8),
+                child: SvfLiveWaveform(
+                  controller: _waveform,
+                  style: const SvfWaveformStyle(
+                    barColor: Colors.cyanAccent,
+                    isSymmetric: true,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                key: const ValueKey('live-transcription'),
+                onPressed: _runLiveTranscription,
+                child: const Text('Run live transcription demo'),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton(
+                    key: const ValueKey('batch-transcription'),
+                    onPressed: _runBatchTranscription,
+                    child: const Text('Batch transcribe'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('router-transcription'),
+                    onPressed: _runRouterTranscription,
+                    child: const Text('Try speech router'),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(_voiceStatus, key: const ValueKey('live-status')),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _audioDetails,
+                  key: const ValueKey('audio-details'),
+                ),
+              ),
+              OutlinedButton(
+                key: const ValueKey('synthesize-speech'),
+                onPressed: _runTts,
+                child: const Text('Synthesize speech demo'),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(_ttsStatus, key: const ValueKey('tts-status')),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDownloadsTab() {
+    return ListView(
+      key: const ValueKey('downloads-page'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        _sectionCard(
+          title: 'Resumable model artifacts',
+          subtitle:
+              'Download weights on demand, observe progress, pause/resume, verify, then hand the artifact to an offline runtime.',
+          child: Column(
+            children: ModelRegistry.allBuiltIn
+                .map(
+                  (manifest) => _ModelTile(
+                    svf: _svf,
+                    manifest: manifest,
+                    onMessage: _showMessage,
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _codeBlock(String title, String value) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF17211D),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFFB9E6D0),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SelectableText(
+            value,
+            style: const TextStyle(
+              color: Color(0xFFE9F2EC),
+              fontFamily: 'monospace',
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionCard({
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 6),
+          Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
+          const Divider(height: 28),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showExportDialog() async {
+    final data = {
+      'name': _nameController.text,
+      'age': int.tryParse(_ageController.text) ?? 0,
+      'summary': _notesController.text,
+      'urgent': _urgent,
+      'transcript': _transcript,
+    };
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reviewed record exported'),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            const JsonEncoder.withIndent('  ').convert(data),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showResult(GenerateTextResult result) {
+    if (mounted) {
+      _showMessage(
+        'Generated ${result.text.length} characters (${result.usage.totalTokens} tokens).',
+      );
+    }
+  }
+}
+
+class _ModelTile extends StatefulWidget {
+  const _ModelTile({
+    required this.svf,
+    required this.manifest,
+    required this.onMessage,
+  });
+
+  final Svf svf;
+  final ModelManifest manifest;
+  final ValueChanged<String> onMessage;
+
+  @override
+  State<_ModelTile> createState() => _ModelTileState();
+}
+
+class _ModelTileState extends State<_ModelTile> {
+  DownloadProgress? _progress;
+  late final StreamSubscription<DownloadProgress> _progressSubscription;
+  bool _busy = false;
+  bool _cached = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _progressSubscription = widget.svf.downloader
+        .progressStream(widget.manifest.id)
+        .listen((progress) {
+          if (mounted) {
+            setState(() {
+              _progress = progress;
+              _busy = !progress.status.isTerminal;
+            });
+          }
+        });
+    _checkCache();
+  }
+
+  @override
+  void dispose() {
+    _progressSubscription.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkCache() async {
+    final cached = await widget.svf.modelCache.isModelCached(widget.manifest);
+    if (mounted) setState(() => _cached = cached);
+  }
+
+  Future<void> _download() async {
+    setState(() => _busy = true);
+    try {
+      await widget.svf.downloader.download(widget.manifest);
+      await _checkCache();
+      widget.onMessage('Downloaded and verified ${widget.manifest.name}.');
+    } catch (error) {
+      widget.onMessage('Download failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pause() async {
+    await widget.svf.downloader.pause(widget.manifest.id);
+  }
+
+  Future<void> _resume() async {
+    setState(() => _busy = true);
+    try {
+      await widget.svf.downloader.resume(widget.manifest.id);
+    } catch (error) {
+      widget.onMessage('Resume failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _cancel() async {
+    await widget.svf.downloader.cancel(widget.manifest.id);
+    if (mounted) {
+      setState(() {
+        _progress = null;
+        _cached = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _progress;
+    final status = progress?.status;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8F4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.manifest.name,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Text(widget.manifest.description ?? widget.manifest.formattedSize),
+          if (progress != null) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: progress.fraction),
+            Text(
+              '${progress.status.name} · ${progress.percentageFormatted} · ${progress.speedFormatted}',
+            ),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: _busy ? null : _download,
+                icon: Icon(_cached ? Icons.check : Icons.download),
+                label: Text(_cached ? 'Cached' : 'Download'),
+              ),
+              if (status == DownloadStatus.downloading ||
+                  status == DownloadStatus.connecting)
+                OutlinedButton(onPressed: _pause, child: const Text('Pause')),
+              if (status == DownloadStatus.paused)
+                OutlinedButton(
+                  onPressed: _busy ? null : _resume,
+                  child: const Text('Resume'),
+                ),
+              if (_progress != null && !_progress!.status.isTerminal)
+                TextButton(onPressed: _cancel, child: const Text('Cancel')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+final class DemoCaseRecord {
+  final String name;
+  final int age;
+  final String summary;
+  final bool urgent;
+
+  const DemoCaseRecord({
+    required this.name,
+    required this.age,
+    required this.summary,
+    required this.urgent,
+  });
+
+  factory DemoCaseRecord.fromJson(Map<String, dynamic> json) => DemoCaseRecord(
+    name: json['name'] as String,
+    age: json['age'] as int,
+    summary: json['summary'] as String,
+    urgent: json['urgent'] as bool,
+  );
+}
+
+class DemoSpeechModel implements SpeechToTextModel {
+  DemoSpeechModel({this.supported = true});
+
+  final bool supported;
+
+  static const _text =
+      'Alice is 34 and reports a severe headache with fever for three days. Follow-up is urgent.';
+
+  @override
+  String get modelId => 'demo-speech';
+
+  @override
+  String get providerId => 'demo';
+
+  @override
+  bool get isOffline => true;
+
+  @override
+  Future<bool> isSupported() async => supported;
+
+  @override
+  Future<TranscriptionResult> doTranscribe({
+    required SvfAudioSource audio,
+    TranscriptionOptions? options,
+  }) async =>
+      const TranscriptionResult(text: _text, language: 'en', confidence: 0.99);
+
+  @override
+  Stream<TranscriptionChunk> doStreamTranscription({
+    Stream<List<int>>? audioStream,
+    TranscriptionOptions? options,
+  }) async* {
+    yield const TranscriptionChunk(text: 'Alice is 34', isFinal: false);
+    yield const TranscriptionChunk(
+      text: _text,
+      isFinal: true,
+      confidence: 0.99,
+    );
+  }
+}
+
+class DemoLanguageModel implements LanguageModel {
+  int _agentTurn = 0;
+
+  void resetAgent() => _agentTurn = 0;
+
+  @override
+  String get modelId => 'demo-language';
+
+  @override
+  String get providerId => 'demo';
+
+  @override
+  bool get isOffline => true;
+
+  @override
+  Future<GenerateTextResult> doGenerate({
+    required List<ChatMessage> messages,
+    SvfSchema? responseSchema,
+    List<SvfTool>? tools,
+    double? temperature,
+    int? maxTokens,
+    double? topP,
+    List<String>? stopSequences,
+  }) async {
+    if (tools != null && tools.isNotEmpty && _agentTurn++ == 0) {
+      return const GenerateTextResult(
+        text: 'I will check the case status.',
+        toolCalls: [
+          ToolCall(
+            id: 'demo-call',
+            name: 'lookup_case',
+            arguments: {'case_id': 'C-100'},
+          ),
+        ],
+        finishReason: FinishReason.toolCalls,
+      );
+    }
+    if (responseSchema != null) {
+      return const GenerateTextResult(
+        text:
+            '{"name":"Alice","age":34,"summary":"Severe headache and fever for three days.","urgent":true}',
+      );
+    }
+    return const GenerateTextResult(
+      text: 'The reviewed case is urgent and requires follow-up.',
+    );
+  }
+
+  @override
+  Stream<String> doStream({
+    required List<ChatMessage> messages,
+    SvfSchema? responseSchema,
+    List<SvfTool>? tools,
+    double? temperature,
+    int? maxTokens,
+    double? topP,
+    List<String>? stopSequences,
+  }) async* {
+    if (responseSchema != null) {
+      const json =
+          '{"name":"Alice","age":34,"summary":"Severe headache and fever for three days.","urgent":true}';
+      for (final chunk in [
+        json.substring(0, 24),
+        json.substring(24, 62),
+        json.substring(62),
+      ]) {
+        yield chunk;
+      }
+      return;
+    }
+    for (final chunk in [
+      'Streaming ',
+      'output ',
+      'from ',
+      'the ',
+      'offline ',
+      'SVF ',
+      'demo.',
+    ]) {
+      yield chunk;
+    }
+  }
+}
+
+class DemoSpeechSynthesis implements TextToSpeechModel {
+  @override
+  String get modelId => 'demo-tts';
+
+  @override
+  String get providerId => 'demo';
+
+  @override
+  Future<SvfAudioSource> doSynthesize({
+    required String text,
+    SynthesisOptions? options,
+  }) async => SvfAudioSource.fromBytes(
+    Uint8List.fromList(text.codeUnits),
+    format: SvfAudioFormat.wav,
+  );
 }
